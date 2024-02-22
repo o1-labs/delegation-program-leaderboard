@@ -1,0 +1,44 @@
+name: publish
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  ECR_REPOSITORY_URL: 673156464838.dkr.ecr.us-west-2.amazonaws.com
+  ECR_REPOSITORY_NAME: delegation-program-leaderboard
+
+jobs:
+  publish-delegation-program-leaderboard-image:
+    name: Build and Push Docker Image
+    runs-on: minafoundation-default-runners
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v3
+      - name: 🔍 Extract Laravel version
+        run: echo "LARAVEL_VERSION=$(cat config/app.php | grep APP_VERSION | awk -F"'" '{print $6}')" >> $GITHUB_ENV
+      - name: 🏷️ Generate Tag
+        run: echo "TAG=${{ env.LARAVEL_VERSION }}-$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_ENV
+      - name: 🔑 ECR Login
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+      - name: 🔍 Check if Tag already exists
+        id: checktag
+        uses: tyriis/docker-image-tag-exists@main
+        with:
+          registry: ${{ env.ECR_REPOSITORY_URL}}
+          repository: ${{ env.ECR_REPOSITORY_NAME }}
+          tag: ${{ env.TAG }}
+      - name: 🛠️ Build delegation-program-leaderboard Docker Image
+        if: steps.checktag.outputs.tag == 'not found'
+        run: DOCKER_BUILDKIT=1 docker build -t ${{ env.ECR_REPOSITORY_URL}}/${{ env.ECR_REPOSITORY_NAME }}:${{ env.TAG }} .
+      - name: 🚚 Push delegation-program-leaderboard Docker Image
+        if: steps.checktag.outputs.tag == 'not found'
+        run: docker push ${{ env.ECR_REPOSITORY_URL}}/${{ env.ECR_REPOSITORY_NAME }}:${{ env.TAG }}
+      - name: 📝 Release Notes
+        run: |
+          echo "Generate Release Notes"
+          echo "TODO: Generate Release Notes (https://github.com/MinaProtocol/mf-devops-workflows/issues/23)"
