@@ -9,9 +9,9 @@
 ***
 
 ## How to change IP address for Leader board UI
-1. >Open File connection.php located in './docker-compose.yml'.
+1. Open connection.php.
 
-2. > Find Below code and change the subnet Ip with your Config Ip.
+2. Find below code and change the subnet IP with your config IP.
 ```Javascript
 networks:
   mina-network:
@@ -21,7 +21,7 @@ networks:
       - subnet: ""
       - subnet: ""
 ```
-3. >In `ipv4_address` You have to chnage Ip with your Ip.
+3. In `ipv4_address` you have to change IP with your IP.
 ```Javascript
 php:
       ...
@@ -33,13 +33,12 @@ php:
 
 ***
 ## How to configure postgress Database
->Open File connection.php located in './connection.php'. 
+Open connection.php and configure this variables with your credentials and save the file. 
 ##### $username = "your database username";
 ##### $password = "your database username";
 ##### $database_name = "your database name";
 ##### $port = "your database port";
 ##### $host = "your database Host Ip address";
->configure this variables with your credentials and save the file.
 
 ## Installing Docker file
 1. Copy this directory to home directory in ubuntu.
