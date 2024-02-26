@@ -9,8 +9,8 @@
 ***
 
 ## Installing Docker file
-1. Download / Move WEB-DEV folder, to home directory in ubuntu.
-2. Create a config file with below paramerters: 
+1. Move terminal to this repo.
+2. Create a config file (i.e. config.env) with below parameters: 
 ##### DB_SIDECAR_HOST=
 ##### DB_SIDECAR_PORT=
 ##### DB_SIDECAR_USER=
