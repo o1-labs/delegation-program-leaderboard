@@ -26,11 +26,11 @@
 Configure these variables and save the file.
 
 3. Go to the terminal.
-4. Type below commands.
+4. Type below commands:
 5. >docker build -t mina-web .
-6. >docker run --env-file ../config.env --name mina-web --restart unless-stopped -p 80:80 -p 443:443 -i -t -d  mina-web
+6. >docker run --env-file ./config.env --name mina-web --restart unless-stopped -p 80:80 -p 443:443 -i -t -d  mina-web
 
-This will install all dependancies and start the container. After finishing the process we will opening the browser with `172.16.238.10`
+This will install all dependancies and start the container. After finishing the process we will opening the browser with `127.0.0.1`
 ***
 
 ## Note
