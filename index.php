@@ -101,13 +101,6 @@
                                  </div>
                               </a>
                            </li>
-                           <li class="nav-item right-box">
-                              <a data-toggle="pill" class="nav-link  d-flex align-items-center justify-content-center" href="#Data-table-2" aria-controls="Data-table-2" aria-selected="false" id="table-two" onclick='showDataForTabTwo (10, 1, 0)'>
-                                 <div class="beta-text">
-                                 Sidecar Uptime System (Current)
-                                 </div>
-                              </a>
-                           </li>
                            <!-- <div class="bottom-plate-tab"></div> -->
                         </ul>
 
