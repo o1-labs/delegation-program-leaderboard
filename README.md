@@ -11,11 +11,6 @@
 ## Installing Docker file
 1. Move terminal to this repo.
 2. Create a config file (i.e. config.env) with below parameters: 
-##### DB_SIDECAR_HOST=
-##### DB_SIDECAR_PORT=
-##### DB_SIDECAR_USER=
-##### DB_SIDECAR_PWD=
-##### DB_SIDECAR_DB=
 ##### DB_SNARK_HOST=
 ##### DB_SNARK_PORT=
 ##### DB_SNARK_USER=
