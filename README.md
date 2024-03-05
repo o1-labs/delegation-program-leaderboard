@@ -16,7 +16,6 @@
 ##### DB_SNARK_USER=
 ##### DB_SNARK_PWD=
 ##### DB_SNARK_DB=
-##### API_HOST=
 
 Configure these variables and save the file.
 

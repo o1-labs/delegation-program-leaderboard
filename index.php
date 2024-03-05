@@ -51,9 +51,6 @@
          <!-- Top Button and Link Section End -->
          <div class="row mb-4">
          <div class="col-12 col-md-6 mx-0 px-0 Link-responcive">
-            <div class="Sidecar-Uptime-text">
-               <p>Ranking for the Mina Foundation Uptime Leaderboard are based on data from the Sidecar Uptime System.</p>
-            </div>
             <div class="Snark-work-Uptime-text">
                <p>Ranking for the Mina Foundation Uptime Leaderboard are based on data from the Snark-work Uptime System.</p>
             </div>
@@ -94,13 +91,11 @@
                </div>
                <div class="tableTabs col-12 col-sm-12 col-md-12 col-lg-12 col-xl-7  px-0 mx-0 mb-5">
                <ul class="row nav nav-pills text-center">
-                           <li class="nav-item left-box">
                               <a data-toggle="pill" class="nav-link active   d-flex align-items-center justify-content-center " href="#Data-table" aria-controls="Data-table" aria-selected="true" id="table-one" onclick='showDataForTabOne (10, 1, 0)'>
                                  <div class="beta-text">
-                                 Snark-Work Uptime System (Beta)
+                                 Snark-Work Uptime System
                                  </div>
                               </a>
-                           </li>
                            <!-- <div class="bottom-plate-tab"></div> -->
                         </ul>
 
@@ -116,35 +111,7 @@
       <div id="loaderSpin"></div>
       <!-- Data Table Section End -->
       <script type="text/javascript">
-         var tabledata ;
          var tabledataSnark ;
-          function getRecords(perPageCount, pageNumber ) {
-         console.log("getRecords");
-              $.ajax({
-                  type: "GET",
-                  url: "getPageData.php",
-                  data: {pageNumber: pageNumber},
-
-                  cache: false,
-          		beforeSend: function() {
-                      $('#loaderSpin').html('<div class="spinner-border d-flex mx-auto" role="status"><span class="sr-only">Loading...</span></div>');
-
-                  },
-                  success: function(response) {
-                     tabledata = response;
-                       
-
-              
-                       if ($('#table-two').attr("aria-controls") === "Data-table-2" && $('#table-two').hasClass('active')) {
-                        showDataForTabTwo (10, 1, 0);
-                        }
-          
-                      $('#loaderSpin').html('');
-                  },
-
-              });
-          }
-
           function getRecordsForSnark(perPageCount, pageNumber ) {
          console.log("getRecordsForSnark");
           $.ajax({
@@ -190,62 +157,24 @@
                   $("#result").html('');
                   $("#result2").html('');
                   $("#result").html(html);
-                  $('.Sidecar-Uptime-text').hide();
                   $('.Snark-work-Uptime-text').show();
               },
 
           });
          }
 
-         function showDataForTabTwo(perPageCount, pageNumber, pagestart ,input ) {
-            if(!input){
-          if(!input){input = null}
-             input = document.getElementById('search-input').value;
-             if(input.length === 0) {
-               input = null
-             }
-            }
-             $.ajax({
-                 type: "POST",
-                 url: "showDataForTabTwo.php",
-                 data: {perPageCount:perPageCount,pageNumber: pageNumber ,pagestart:pagestart, tabledata : tabledata , search_input : input},
-
-                 cache: false,
-                 success: function(html) {
-                     $('#loaderSpin').html('');
-                     $("#result").html('');
-                     $("#result2").html('');
-                     $("#result2").html(html);
-                     $('.Sidecar-Uptime-text').show();
-                     $('.Snark-work-Uptime-text').hide();
-                 },
-             });
-         }
          function search_result() {
             //alert('demo');
           let input = document.getElementById('search-input').value
           input=input.toLowerCase();
-          if ($('#table-one').attr("aria-controls") === "Data-table" && $('#table-one').hasClass('active')) {
-                              showDataForTabOne (10, 1, 0, input);
-                  }
-                  else if ($('#table-two').attr("aria-controls") === "Data-table-2" && $('#table-two').hasClass('active')) {
-                              showDataForTabTwo (10, 1, 0 , input);
-                  }
-
+          showDataForTabOne (10, 1, 0, input);
          }
           $(document).ready(function() {
           console.log("$(document).ready");
-              getRecords(10, 1);
               getRecordsForSnark(10, 1);
-            $('.Sidecar-Uptime-text').hide();
 
               $('input[type=search]').on('search', function () {
-                  if ($('#table-one').attr("aria-controls") === "Data-table" && $('#table-one').hasClass('active')) {
-                     showDataForTabOne (10, 1, 0);
-                  }
-                  else if ($('#table-two').attr("aria-controls") === "Data-table-2" && $('#table-two').hasClass('active')) {
-                      showDataForTabTwo (10, 1, 0);
-                  }
+                  showDataForTabOne (10, 1, 0);
               });
           });
       </script>
