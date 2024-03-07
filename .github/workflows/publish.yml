@@ -1,27 +1,43 @@
-name: publish
+name: Publish
 
 on:
+  push:
+    tags:
+    - '*'
   workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
+    inputs:
+      docker_tag_prefix:
+        description: "Enter the Docker Tag Prefix (e.g adhoc-test)"
+        required: true
+        type: string
 env:
   ECR_REPOSITORY_URL: 673156464838.dkr.ecr.us-west-2.amazonaws.com
   ECR_REPOSITORY_NAME: delegation-program-leaderboard
+  DOCKER_TAG_PREFIX: ${{ github.event.inputs.docker_tag_prefix }}
+
+# This allows a subsequently queued workflow run to interrupt previous runs
+concurrency:
+  group: '${{ github.workflow }} @ ${{ github.head_ref || github.ref }}'
+  cancel-in-progress: true
 
 jobs:
-  publish-delegation-program-leaderboard-image:
+  build-docker-image:
     name: Build and Push Docker Image
     runs-on: minafoundation-default-runners
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v3
-      - name: 🔍 Extract Laravel version
-        run: echo "LARAVEL_VERSION=$(cat config/app.php | grep APP_VERSION | awk -F"'" '{print $6}')" >> $GITHUB_ENV
       - name: 🏷️ Generate Tag
-        run: echo "TAG=${{ env.LARAVEL_VERSION }}-$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_ENV
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            PREFIX=${{ env.DOCKER_TAG_PREFIX }}
+          elif [ "${{ github.event_name }}" == "push" ] && [ -n "${{ github.event.ref }}" ]; then
+            PREFIX=$(basename ${{ github.ref }})
+          else
+            echo "Invalid event. Exiting..."
+            exit 1
+          fi
+          echo "TAG=$PREFIX-$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_ENV
       - name: 🔑 ECR Login
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
@@ -32,13 +48,9 @@ jobs:
           registry: ${{ env.ECR_REPOSITORY_URL}}
           repository: ${{ env.ECR_REPOSITORY_NAME }}
           tag: ${{ env.TAG }}
-      - name: 🛠️ Build delegation-program-leaderboard Docker Image
+      - name: 🛠️ Build Docker Image
         if: steps.checktag.outputs.tag == 'not found'
         run: DOCKER_BUILDKIT=1 docker build -t ${{ env.ECR_REPOSITORY_URL}}/${{ env.ECR_REPOSITORY_NAME }}:${{ env.TAG }} .
-      - name: 🚚 Push delegation-program-leaderboard Docker Image
+      - name: 🚚 Push Docker Image
         if: steps.checktag.outputs.tag == 'not found'
         run: docker push ${{ env.ECR_REPOSITORY_URL}}/${{ env.ECR_REPOSITORY_NAME }}:${{ env.TAG }}
-      - name: 📝 Release Notes
-        run: |
-          echo "Generate Release Notes"
-          echo "TODO: Generate Release Notes (https://github.com/MinaProtocol/mf-devops-workflows/issues/23)"
