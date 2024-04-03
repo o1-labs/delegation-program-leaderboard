@@ -16,6 +16,10 @@
 ##### DB_SNARK_USER=
 ##### DB_SNARK_PWD=
 ##### DB_SNARK_DB=
+##### optional test setting
+##### IGNORE_APPLICATION_STATUS=1
+
+When `IGNORE_APPLICATION_STATUS` is set to `1` the leaderboard will not take into consideration `application_status=true` condition when displaying the results. It is meant to be used in test environments only.
 
 Configure these variables and save the file.
 
