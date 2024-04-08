@@ -42,6 +42,7 @@ $maxScoreSnark= " WITH recentone as (
     SELECT COUNT(1),  to_char(to_timestamp(end_epoch),  'DD-MM-YYYY hh24:mi') as last_modified
     FROM bot_logs , recentone
     WHERE batch_start_epoch >=  start_epoch and batch_end_epoch <= end_epoch
+    AND files_processed > 0
     group by 2     ";
 
 $maxScoreSnarkresult = pg_query($conn, $maxScoreSnark);
