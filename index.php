@@ -63,7 +63,7 @@ ini_set('error_reporting', E_ALL );
                <div class="d-xl-flex justify-content-end  mb-2">
                   <div class="flex-column d-sm-block mina-delegation-links">
                      <div class="text-left"><a class="Mina-Refrance-color alignment-link" href="https://minaprotocol.com/blog/mina-foundation-delegation-policy" target="_blank">Mina Foundation Delegation Policy</a><i class="ml-2 bi bi-box-arrow-up-right Mina-Refrance-color"></i></div>
-                     <div class="text-left"><a class="Mina-Refrance-color alignment-link" href="https://docs.minaprotocol.com/node-operators/foundation-delegation-program" target="_blank">Delegation Program Participation Guidelines</a><i class="ml-2 bi bi-box-arrow-up-right Mina-Refrance-color"></i></div>
+                     <div class="text-left"><a class="Mina-Refrance-color alignment-link" href="https://docs.minaprotocol.com/node-operators/delegation-program" target="_blank">Delegation Program Participation Guidelines</a><i class="ml-2 bi bi-box-arrow-up-right Mina-Refrance-color"></i></div>
                      <div class="text-left"><a class="Mina-Refrance-color alignment-link" href="https://uptime.minaprotocol.com/apidocs/" target="_blank">MINA Open API for Uptime Data</a><i class="ml-2 bi bi-box-arrow-up-right Mina-Refrance-color"></i></div>
                   </div>
                </div>
