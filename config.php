@@ -1,7 +1,7 @@
 <?php
 
 $ShowScoreColumn = true;
-$Configurl = "https://docs.google.com/spreadsheets/d/1JTp7nZiw68a-m5KoBeqPr0OOWBVO804xv6HpQNQdKPg/edit#gid=0";
+$Configurl = "https://docs.google.com/spreadsheets/d/1qhFrzYmRC_rsQPL38fw220D27KFWFmQSis0f4qz8frk/edit#gid=0";
 $MaintenanceMode = false;
 return array($ShowScoreColumn,$Configurl,$MaintenanceMode);
 
