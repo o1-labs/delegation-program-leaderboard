@@ -9,7 +9,7 @@ parameters:
   - name: dataType
     in: path
     type: string
-    enum: ['snarkwork', 'sidecar']
+    enum: ['snarkwork']
     required: false
     default: snarkwork
 responses:

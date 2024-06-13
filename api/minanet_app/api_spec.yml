@@ -9,8 +9,8 @@ parameters:
   - name: dataType
     in: path
     type: string
-    description: score for snarkwork or sidecar data
-    enum: ['snarkwork', 'sidecar']
+    description: score for snarkwork data
+    enum: ['snarkwork']
     required: false
     default: snarkwork
   - name: scoreAt
