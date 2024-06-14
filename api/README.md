@@ -6,7 +6,7 @@ Initial config for Leaderboard API
 	Install postgres   
 	Execute SQL statement from database\tables.sql. This will create tables and initial config data needed by bot.  
 	In config.py update below properties (All properties are required):  
-	`POSTGRES_HOST`			The postgres hostname  
+  	`POSTGRES_HOST`			The postgres hostname  
     `POSTGRES_PORT`			The postgres port  
     `POSTGRES_USER`			The postgres username  
     `POSTGRES_PASSWORD`		The postgres password  

@@ -1,0 +1,23 @@
+version: '3.8'
+networks:
+  leaderboard:
+    name: "leaderboard"
+services:
+  leaderboard-web:
+    container_name: web
+    image: leaderboard-web:latest
+    env_file: .env
+    #environment:
+    ports:
+      - 80:80
+    networks:
+      - leaderboard
+  leaderboard-api:
+    container_name: api
+    image: leaderboard-api:latest
+    env_file: .env
+    #environment:
+    ports:
+      - 5000:5000
+    networks:
+      - leaderboard
