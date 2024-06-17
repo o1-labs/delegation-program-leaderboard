@@ -66,7 +66,7 @@ jobs:
 
       - name: 🛠️ Build Web Docker Image
         if: steps.check-web-tag.outputs.tag == 'not found'
-        run: DOCKER_BUILDKIT=1 docker build -f web/Dockerfile -t ${{ env.ECR_REPOSITORY_URL}}/${{ env.ECR_REPOSITORY_NAME_WEB }}:${{ env.TAG }} .
+        run: DOCKER_BUILDKIT=1 docker build -t ${{ env.ECR_REPOSITORY_URL}}/${{ env.ECR_REPOSITORY_NAME_WEB }}:${{ env.TAG }} ./web
 
       - name: 🚚 Push Web Docker Image
         if: steps.check-web-tag.outputs.tag == 'not found'
@@ -74,7 +74,7 @@ jobs:
 
       - name: 🛠️ Build API Docker Image
         if: steps.check-api-tag.outputs.tag == 'not found'
-        run: DOCKER_BUILDKIT=1 docker build -f api/Dockerfile -t ${{ env.ECR_REPOSITORY_URL}}/${{ env.ECR_REPOSITORY_NAME_API }}:${{ env.TAG }} .
+        run: DOCKER_BUILDKIT=1 docker build -t ${{ env.ECR_REPOSITORY_URL}}/${{ env.ECR_REPOSITORY_NAME_API }}:${{ env.TAG }} ./api
 
       - name: 🚚 Push API Docker Image
         if: steps.check-api-tag.outputs.tag == 'not found'
