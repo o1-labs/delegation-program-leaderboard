@@ -10,9 +10,11 @@ on:
         description: "Enter the Docker Tag Prefix (e.g adhoc-test)"
         required: true
         type: string
+
 env:
   ECR_REPOSITORY_URL: 673156464838.dkr.ecr.us-west-2.amazonaws.com
-  ECR_REPOSITORY_NAME: delegation-program-leaderboard
+  ECR_REPOSITORY_NAME_WEB: delegation-program-leaderboard
+  ECR_REPOSITORY_NAME_API: delegation-program-leaderboard-api
   DOCKER_TAG_PREFIX: ${{ github.event.inputs.docker_tag_prefix }}
 
 # This allows a subsequently queued workflow run to interrupt previous runs
@@ -21,12 +23,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-docker-image:
-    name: Build and Push Docker Image
+  build-and-push-docker-images:
+    name: Build and Push Docker Images
     runs-on: minafoundation-default-runners
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v3
+
       - name: 🏷️ Generate Tag
         run: |
           BRANCH_OR_TAG=$(basename ${{ github.ref }})
@@ -40,19 +43,39 @@ jobs:
             echo "Invalid event. Exiting..."
             exit 1
           fi
+
       - name: 🔑 ECR Login
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
-      - name: 🔍 Check if Tag already exists
-        id: checktag
+
+      - name: 🔍 Check if Web Tag already exists
+        id: check-web-tag
         uses: tyriis/docker-image-tag-exists@main
         with:
           registry: ${{ env.ECR_REPOSITORY_URL}}
-          repository: ${{ env.ECR_REPOSITORY_NAME }}
+          repository: ${{ env.ECR_REPOSITORY_NAME_WEB }}
           tag: ${{ env.TAG }}
-      - name: 🛠️ Build Docker Image
-        if: steps.checktag.outputs.tag == 'not found'
-        run: DOCKER_BUILDKIT=1 docker build -t ${{ env.ECR_REPOSITORY_URL}}/${{ env.ECR_REPOSITORY_NAME }}:${{ env.TAG }} .
-      - name: 🚚 Push Docker Image
-        if: steps.checktag.outputs.tag == 'not found'
-        run: docker push ${{ env.ECR_REPOSITORY_URL}}/${{ env.ECR_REPOSITORY_NAME }}:${{ env.TAG }}
+
+      - name: 🔍 Check if API Tag already exists
+        id: check-api-tag
+        uses: tyriis/docker-image-tag-exists@main
+        with:
+          registry: ${{ env.ECR_REPOSITORY_URL}}
+          repository: ${{ env.ECR_REPOSITORY_NAME_API }}
+          tag: ${{ env.TAG }}
+
+      - name: 🛠️ Build Web Docker Image
+        if: steps.check-web-tag.outputs.tag == 'not found'
+        run: DOCKER_BUILDKIT=1 docker build -t ${{ env.ECR_REPOSITORY_URL}}/${{ env.ECR_REPOSITORY_NAME_WEB }}:${{ env.TAG }} ./web
+
+      - name: 🚚 Push Web Docker Image
+        if: steps.check-web-tag.outputs.tag == 'not found'
+        run: docker push ${{ env.ECR_REPOSITORY_URL}}/${{ env.ECR_REPOSITORY_NAME_WEB }}:${{ env.TAG }}
+
+      - name: 🛠️ Build API Docker Image
+        if: steps.check-api-tag.outputs.tag == 'not found'
+        run: DOCKER_BUILDKIT=1 docker build -t ${{ env.ECR_REPOSITORY_URL}}/${{ env.ECR_REPOSITORY_NAME_API }}:${{ env.TAG }} ./api
+
+      - name: 🚚 Push API Docker Image
+        if: steps.check-api-tag.outputs.tag == 'not found'
+        run: docker push ${{ env.ECR_REPOSITORY_URL}}/${{ env.ECR_REPOSITORY_NAME_API }}:${{ env.TAG }}

@@ -1,0 +1,25 @@
+tags:
+  - uptimescore
+responses:
+  200:
+    description: A list of block producers and their respective most recent score in descending order of score.
+    schema:
+      type: array
+      items:
+        type: object
+        properties:
+          block_producer_key:
+            type: string
+          score:
+            type: number
+            format: float
+          score_percent:
+            type: number
+            format: float
+    examples: 
+      - "block_producer_key": "B62...1"
+        "score": "2314"
+        "score_percent": "98.80"
+      - "block_producer_key": "B62...2"
+        "score": "2311"
+        "score_percent": "98.00"
