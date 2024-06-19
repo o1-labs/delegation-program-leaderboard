@@ -50,7 +50,7 @@ template = {
     },
     "host": BaseConfig.SWAGGER_HOST,  # overrides localhost:500
     "basePath": "/uptimescore",  # base bash for blueprint registration
-    "schemes": ["http", "https"],
+    "schemes": ["https", "http" ],
     "operationId": "uptimescore",
 }
 
