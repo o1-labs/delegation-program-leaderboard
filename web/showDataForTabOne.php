@@ -1,9 +1,7 @@
 <?php
 
-$myarray = include 'config.php';
-
-$ShowScoreColumn = $myarray[0];
-$MaintenanceMode = $myarray[2];
+$ShowScoreColumn = true;
+$MaintenanceMode = false;
 
 
 $tabledata = json_decode($_POST['tabledata'], true) ;
