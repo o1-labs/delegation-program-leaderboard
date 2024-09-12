@@ -6,24 +6,37 @@ $MaintenanceMode = false;
 // Sanitize and validate the POST data
 $tabledata = json_decode($_POST['tabledata'], true);
 
-if (!is_array($tabledata)) {
-    exit("Invalid table data.");
-}
+// Ensure that tabledata contains only the allowed keys
+$allowedKeys = ['rowCount', 'maxScore', 'last_modified', 'row'];
+$tabledata = array_intersect_key($tabledata, array_flip($allowedKeys));
 
-$SearchInputData = isset($_POST['search_input']) ? htmlspecialchars($_POST['search_input'], ENT_QUOTES, 'UTF-8') : null;
-
-$pageNumber = isset($_POST['pageNumber']) ? filter_var($_POST['pageNumber'], FILTER_VALIDATE_INT) : 1;
-$perPageCount = isset($_POST['perPageCount']) ? filter_var($_POST['perPageCount'], FILTER_VALIDATE_INT) : 10;
-
+// Validate and sanitize the remaining keys
 $rowCount = isset($tabledata['rowCount']) ? (int)$tabledata['rowCount'] : 0;
 $maxScore = isset($tabledata['maxScore']) ? (int)$tabledata['maxScore'] : 0;
 $last_modified = isset($tabledata['last_modified']) ? htmlspecialchars($tabledata['last_modified'], ENT_QUOTES, 'UTF-8') : '';
+
+// Validate pageNumber and perPageCount
+$SearchInputData = isset($_POST['search_input']) ? htmlspecialchars($_POST['search_input'], ENT_QUOTES, 'UTF-8') : null;
+$pageNumber = isset($_POST['pageNumber']) ? filter_var($_POST['pageNumber'], FILTER_VALIDATE_INT) : 1;
+$perPageCount = isset($_POST['perPageCount']) ? filter_var($_POST['perPageCount'], FILTER_VALIDATE_INT) : 10;
 
 $pagesCount = ceil($rowCount / $perPageCount);
 $lowerLimit = ($pageNumber - 1) * $perPageCount;
 $pagestart = isset($_POST['pagestart']) ? filter_var($_POST['pagestart'], FILTER_VALIDATE_INT) : 0;
 
+// Ensure that rows contain only allowed fields
 $rowData = isset($tabledata['row']) && is_array($tabledata['row']) ? $tabledata['row'] : [];
+$allowedRowKeys = ['block_producer_key', 'score', 'score_percent'];
+
+foreach ($rowData as $key => $row) {
+    // Remove any keys that are not in the allowedRowKeys whitelist
+    $rowData[$key] = array_intersect_key($row, array_flip($allowedRowKeys));
+
+    // Sanitize each value in the row
+    $rowData[$key]['block_producer_key'] = isset($rowData[$key]['block_producer_key']) ? htmlspecialchars($rowData[$key]['block_producer_key'], ENT_QUOTES, 'UTF-8') : '';
+    $rowData[$key]['score'] = isset($rowData[$key]['score']) ? (float)$rowData[$key]['score'] : 0;
+    $rowData[$key]['score_percent'] = isset($rowData[$key]['score_percent']) ? (float)$rowData[$key]['score_percent'] : 0;
+}
 
 if ($SearchInputData !== null) {
     $newArray = array();
