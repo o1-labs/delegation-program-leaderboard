@@ -15,7 +15,7 @@ $sqlCondition = $ignoreApplicationStatus ? "score IS NOT NULL" : "application_st
 $sql = "SELECT COUNT(*) FROM nodes WHERE {$sqlCondition}";
 if ($result = pg_query($conn, $sql)) {
     $row = pg_fetch_row($result);
-    $rowCount = (int)$row[0]; 
+    $rowCount = (int)$row[0];
     pg_free_result($result);
 }
 
@@ -51,14 +51,14 @@ $maxScoreSnarkResult = pg_query($conn, $maxScoreSnark);
 $maxScoreRow = pg_fetch_row($maxScoreSnarkResult);
 
 // Sanitize database output before using it
-$maxScore = (int)$maxScoreRow[0]; 
-$last_modified = htmlspecialchars($maxScoreRow[1], ENT_QUOTES, 'UTF-8'); 
+$maxScore = (int)$maxScoreRow[0];
+$last_modified = htmlspecialchars($maxScoreRow[1], ENT_QUOTES, 'UTF-8');
 
 // Ensure to sanitize the JSON output
 foreach ($row as &$r) {
     $r['block_producer_key'] = htmlspecialchars($r['block_producer_key'], ENT_QUOTES, 'UTF-8');
-    $r['score'] = (float)$r['score']; 
-    $r['score_percent'] = (float)$r['score_percent']; 
+    $r['score'] = (float)$r['score'];
+    $r['score_percent'] = (float)$r['score_percent'];
 }
 
 echo json_encode(array('row' => $row, 'rowCount' => $rowCount, 'maxScore' => $maxScore, 'last_modified' => $last_modified));
