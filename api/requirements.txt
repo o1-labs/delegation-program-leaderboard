@@ -14,5 +14,5 @@ psycopg2==2.9.3
 pyrsistent==0.18.1
 PyYAML==6.0.1
 six==1.16.0
-Werkzeug==2.1.1
+Werkzeug==3.0.3
 zipp==3.8.0
