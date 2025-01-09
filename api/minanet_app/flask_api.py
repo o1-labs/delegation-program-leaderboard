@@ -50,16 +50,25 @@ template = {
     },
     "host": BaseConfig.SWAGGER_HOST,  # overrides localhost:500
     "basePath": "/uptimescore",  # base bash for blueprint registration
-    "schemes": ["https", "http" ],
+    "schemes": ["https", "http"],
     "operationId": "uptimescore",
 }
 
+swagger_config = Swagger.DEFAULT_CONFIG
+swagger_config["swagger_ui_bundle_js"] = (
+    "//unpkg.com/swagger-ui-dist@3.52.5/swagger-ui-bundle.js"
+)
+swagger_config["swagger_ui_standalone_preset_js"] = (
+    "//unpkg.com/swagger-ui-dist@3.52.5/swagger-ui-standalone-preset.js"
+)
+swagger_config["jquery_js"] = "//unpkg.com/jquery@3.7.1/dist/jquery.min.js"
+swagger_config["swagger_ui_css"] = "//unpkg.com/swagger-ui-dist@3.52.5/swagger-ui.css"
 
 # create app instance
 app = Flask(__name__)
 app.config.from_mapping(config)
 cache = Cache(app)
-swagger = Swagger(app, template=template)
+swagger = Swagger(app, template=template, config=swagger_config)
 
 
 # 1
