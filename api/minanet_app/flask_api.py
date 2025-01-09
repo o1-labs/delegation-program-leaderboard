@@ -294,5 +294,15 @@ def handle_exception(e):
     return jsonify(response), 500
 
 
+@app.before_request
+def disallow_all_get_params():
+    if request.args:
+        response = {
+            "error": "Query parameters are not allowed",
+            "error_message": "This application does not support query parameters in requests.",
+        }
+        return jsonify(response), 400
+
+
 if __name__ == "__main__":
     app.run(host=BaseConfig.API_HOST, port=BaseConfig.API_PORT, debug=BaseConfig.DEBUG)
