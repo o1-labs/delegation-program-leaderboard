@@ -1,3 +1,4 @@
-*_test.env
+*_test*.env
 
 .env
+env.sh
