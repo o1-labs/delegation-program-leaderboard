@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y libpq-dev && docker-php-ext-install pdo
 
 RUN docker-php-ext-configure pgsql -with-pgsql=/usr/local/pgsql \
     && docker-php-ext-install pgsql pdo_pgsql
-  
+
 RUN a2enmod ssl && a2enmod rewrite
 
 COPY ./000-default.conf /etc/apache2/sites-available/000-default.conf
@@ -27,7 +27,8 @@ COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr
 RUN mv $PHP_INI_DIR/php.ini-development $PHP_INI_DIR/php.ini
 # COPY ./php.ini $PHP_INI_DIR/php.ini
 COPY ./php.ini $PHP_INI_DIR/conf.d/
-COPY . /var/www/html/
+COPY ./*.php /var/www/html/
+COPY ./assets/ /var/www/html/assets/
 WORKDIR /var/www/html/
 RUN service apache2 restart
 # Use the default production configuration
