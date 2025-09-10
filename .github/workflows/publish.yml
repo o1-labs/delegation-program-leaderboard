@@ -12,9 +12,9 @@ on:
         type: string
 
 env:
-  ECR_REPOSITORY_URL: 673156464838.dkr.ecr.us-west-2.amazonaws.com
-  ECR_REPOSITORY_NAME_WEB: delegation-program-leaderboard
-  ECR_REPOSITORY_NAME_API: delegation-program-leaderboard-api
+  REGISTRY: ghcr.io
+  REPOSITORY_NAME_WEB: delegation-program-leaderboard
+  REPOSITORY_NAME_API: delegation-program-leaderboard-api
   DOCKER_TAG_PREFIX: ${{ github.event.inputs.docker_tag_prefix }}
 
 # This allows a subsequently queued workflow run to interrupt previous runs
@@ -25,7 +25,7 @@ concurrency:
 jobs:
   build-and-push-docker-images:
     name: Build and Push Docker Images
-    runs-on: minafoundation-default-runners
+    runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v3
@@ -36,46 +36,31 @@ jobs:
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             PREFIX=${{ env.DOCKER_TAG_PREFIX }}
             SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
-            echo "TAG=$PREFIX-$BRANCH_OR_TAG-$SHORT_SHA" >> $GITHUB_ENV
+            echo "TAG=$(echo $PREFIX-$BRANCH_OR_TAG-$SHORT_SHA | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
           elif [ "${{ github.event_name }}" == "push" ] && [ -n "${{ github.event.ref }}" ]; then
-            echo "TAG=$BRANCH_OR_TAG" >> $GITHUB_ENV
+            echo "TAG=$(echo $BRANCH_OR_TAG | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
           else
             echo "Invalid event. Exiting..."
             exit 1
           fi
 
-      - name: 🔑 ECR Login
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v1
-
-      - name: 🔍 Check if Web Tag already exists
-        id: check-web-tag
-        uses: tyriis/docker-image-tag-exists@v2.0.1
+      - name: 🔑 Log in to GitHub Container Registry
+        uses: docker/login-action@v2
         with:
-          registry: ${{ env.ECR_REPOSITORY_URL}}
-          repository: ${{ env.ECR_REPOSITORY_NAME_WEB }}
-          tag: ${{ env.TAG }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🔍 Check if API Tag already exists
-        id: check-api-tag
-        uses: tyriis/docker-image-tag-exists@main
+      - name: 🛠️ Build and Push Web Docker Image
+        uses: docker/build-push-action@v4
         with:
-          registry: ${{ env.ECR_REPOSITORY_URL}}
-          repository: ${{ env.ECR_REPOSITORY_NAME_API }}
-          tag: ${{ env.TAG }}
+          context: ./web
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.REPOSITORY_NAME_WEB }}:${{ env.TAG }}
 
-      - name: 🛠️ Build Web Docker Image
-        if: steps.check-web-tag.outputs.tag == 'not found'
-        run: DOCKER_BUILDKIT=1 docker build -t ${{ env.ECR_REPOSITORY_URL}}/${{ env.ECR_REPOSITORY_NAME_WEB }}:${{ env.TAG }} ./web
-
-      - name: 🚚 Push Web Docker Image
-        if: steps.check-web-tag.outputs.tag == 'not found'
-        run: docker push ${{ env.ECR_REPOSITORY_URL}}/${{ env.ECR_REPOSITORY_NAME_WEB }}:${{ env.TAG }}
-
-      - name: 🛠️ Build API Docker Image
-        if: steps.check-api-tag.outputs.tag == 'not found'
-        run: DOCKER_BUILDKIT=1 docker build -t ${{ env.ECR_REPOSITORY_URL}}/${{ env.ECR_REPOSITORY_NAME_API }}:${{ env.TAG }} ./api
-
-      - name: 🚚 Push API Docker Image
-        if: steps.check-api-tag.outputs.tag == 'not found'
-        run: docker push ${{ env.ECR_REPOSITORY_URL}}/${{ env.ECR_REPOSITORY_NAME_API }}:${{ env.TAG }}
+      - name: 🛠️ Build and Push API Docker Image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./api
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.REPOSITORY_NAME_API }}:${{ env.TAG }}
