@@ -95,6 +95,42 @@ Both components connect to the same PostgreSQL database containing delegation pr
 3. Launch services with `just launch-*` commands
 4. Access web interface at `localhost:80` and API docs at `localhost:5000` (Swagger UI)
 
+## Debugging and Troubleshooting
+
+### Health Check Endpoints
+
+The API provides several health check endpoints for monitoring:
+
+- `GET /health` - Basic liveness probe (always returns 200 if Flask is running)
+- `GET /health/ready` - Readiness probe with database connectivity check
+- `GET /health/debug` - Detailed debug information (only available when `DEBUG=true`)
+
+### Connection Diagnostics
+
+For troubleshooting database connectivity issues:
+
+```bash
+# Run connection diagnostics script
+cd api && python diagnose_connection.py
+```
+
+This script tests:
+- DNS resolution for database host
+- Network connectivity (TCP connection)
+- Database authentication and basic queries
+
+### Debug Configuration
+
+Enable debug mode and verbose logging:
+
+```bash
+# In .env or environment variables
+DEBUG=true
+LOGGING_LEVEL=DEBUG
+DB_CONNECTION_TIMEOUT=10
+DB_RETRY_ATTEMPTS=3
+```
+
 ## Deployment
 
-The project includes GitHub Actions workflow (`.github/workflows/publish.yml`) for automated Docker image builds and ECR deployment on tag pushes or manual workflow dispatch.
+The project includes GitHub Actions workflow (`.github/workflows/publish.yml`) for automated Docker image builds and GitHub Container Registry deployment on tag pushes or manual workflow dispatch.
