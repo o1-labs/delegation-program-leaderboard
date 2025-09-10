@@ -11,6 +11,7 @@ from flask_caching import Cache
 
 from flasgger import Swagger
 from flasgger import swag_from
+from db_health import db_health_checker
 
 # create database connections
 
@@ -18,24 +19,19 @@ ERROR = "Error: {0}"
 
 
 def get_snark_conn():
+    """Get database connection using enhanced health checker with retry logic"""
     try:
-        connection_snark = psycopg2.connect(
-            host=BaseConfig.SNARK_HOST,
-            port=BaseConfig.SNARK_PORT,
-            database=BaseConfig.SNARK_DB,
-            user=BaseConfig.SNARK_USER,
-            password=BaseConfig.SNARK_PASSWORD,
-        )
-    except (Exception, psycopg2.OperationalError) as error:
+        return db_health_checker.get_connection_with_retry()
+    except Exception as error:
         logger.error(ERROR.format(error))
         raise ValueError("System is down. Please try again later.")
-    return connection_snark
 
 
 config = {
-    "DEBUG": True,  # some Flask specific configs
+    "DEBUG": BaseConfig.DEBUG,  # Environment-controlled debug mode
     "CACHE_TYPE": "SimpleCache",  # Flask-Caching related configs
     "CACHE_DEFAULT_TIMEOUT": BaseConfig.CACHE_TIMEOUT,
+    "JSONIFY_PRETTYPRINT_REGULAR": BaseConfig.DEBUG,  # Pretty print JSON in debug mode
 }
 
 # # ![MINA logo](https://cdn-fagpn.nitrocdn.com/nvawPUgmLuenSpEkZxPTWilYhwRGNGyf/assets/static/optimized/rev-e46fd70/wp-content/themes/minaprotocol/img/mina-wordmark-light.svg)
@@ -69,6 +65,82 @@ app = Flask(__name__)
 app.config.from_mapping(config)
 cache = Cache(app)
 swagger = Swagger(app, template=template, config=swagger_config)
+
+# Health check endpoints for Kubernetes probes
+@app.route('/health', methods=['GET'])
+def health_check():
+    """
+    Basic liveness probe endpoint
+    Returns 200 if the Flask application is running
+    """
+    return jsonify({
+        'status': 'healthy',
+        'service': 'delegation-program-leaderboard-api',
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    }), 200
+
+@app.route('/health/ready', methods=['GET'])
+def readiness_check():
+    """
+    Readiness probe endpoint with database connectivity check
+    Returns 200 if the application is ready to serve traffic
+    """
+    try:
+        health_status = db_health_checker.check_database_health()
+        
+        if health_status['status'] == 'healthy':
+            return jsonify({
+                'status': 'ready',
+                'service': 'delegation-program-leaderboard-api',
+                'database': health_status,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }), 200
+        else:
+            return jsonify({
+                'status': 'not_ready',
+                'service': 'delegation-program-leaderboard-api', 
+                'database': health_status,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }), 503
+            
+    except Exception as e:
+        logger.error(f"Readiness check failed: {e}")
+        return jsonify({
+            'status': 'not_ready',
+            'service': 'delegation-program-leaderboard-api',
+            'error': str(e),
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }), 503
+
+@app.route('/health/debug', methods=['GET'])
+def debug_info():
+    """
+    Debug information endpoint for troubleshooting
+    Only available when DEBUG mode is enabled
+    """
+    if not BaseConfig.DEBUG:
+        return jsonify({'error': 'Debug information not available in production mode'}), 403
+        
+    try:
+        db_info = db_health_checker.get_connection_info()
+        health_status = db_health_checker.check_database_health()
+        
+        return jsonify({
+            'service': 'delegation-program-leaderboard-api',
+            'debug_mode': BaseConfig.DEBUG,
+            'logging_level': BaseConfig.LOGGING_LEVEL,
+            'database_config': db_info,
+            'database_health': health_status,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Debug info endpoint failed: {e}")
+        return jsonify({
+            'service': 'delegation-program-leaderboard-api',
+            'error': str(e),
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }), 500
 
 
 # 1
