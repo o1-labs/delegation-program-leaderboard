@@ -33,6 +33,7 @@ jobs:
       - name: 🏷️ Generate Tag
         run: |
           BRANCH_OR_TAG=$(basename ${{ github.ref }})
+          echo "REPO_LOWER=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             PREFIX=${{ env.DOCKER_TAG_PREFIX }}
             SHORT_SHA=$(echo $GITHUB_SHA | cut -c1-7)
@@ -56,11 +57,11 @@ jobs:
         with:
           context: ./web
           push: true
-          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.REPOSITORY_NAME_WEB }}:${{ env.TAG }}
+          tags: ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}-${{ env.REPOSITORY_NAME_WEB }}:${{ env.TAG }}
 
       - name: 🛠️ Build and Push API Docker Image
         uses: docker/build-push-action@v4
         with:
           context: ./api
           push: true
-          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.REPOSITORY_NAME_API }}:${{ env.TAG }}
+          tags: ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}-${{ env.REPOSITORY_NAME_API }}:${{ env.TAG }}
