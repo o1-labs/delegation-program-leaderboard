@@ -66,10 +66,15 @@ For API (`/api`):
 - `API_HOST`, `API_PORT` - API server binding
 - `CACHE_TIMEOUT` - API response caching duration
 - `SWAGGER_HOST` - Swagger documentation host
+- `DEBUG` - Enable debug mode and enhanced logging (true/false)
+- `LOGGING_LEVEL` - Set logging verbosity (DEBUG/INFO/WARNING/ERROR)
+- `LOGGING_LOCATION` - Log file path (use empty string for console-only in containers)
+- `DB_CONNECTION_TIMEOUT`, `DB_RETRY_ATTEMPTS` - Database connection tuning
 
 For Web (`/web`):
 - `DB_SNARK_*` - Database connection (mirrors API config)
 - `IGNORE_APPLICATION_STATUS=1` - Test mode flag (ignores application_status filtering)
+- Configurable URLs: `DELEGATION_FORM_URL`, `DELEGATION_POLICY_URL`, `API_DOCS_URL`, etc.
 
 ## Architecture
 
@@ -82,11 +87,13 @@ For Web (`/web`):
 ### API Backend (`/api`) 
 - **Technology**: Flask Python application with Swagger documentation
 - **Main files**: `minanet_app/flask_api.py` (main API), `config.py` (configuration), `logger_util.py` (logging)
-- **Features**: Response caching, comprehensive API documentation, PostgreSQL integration
+- **Key modules**: `db_health.py` (database health monitoring), `diagnose_connection.py` (diagnostics script)
+- **Features**: Response caching, comprehensive API documentation, PostgreSQL integration with retry logic
+- **API Endpoints**: `/health`, `/health/ready`, `/health/debug`, `/uptimescore/` (main leaderboard), `/apidocs/` (Swagger UI)
 - **Dependencies**: See `requirements.txt` (Flask, psycopg2, flasgger for Swagger)
 
 ### Database Integration
-Both components connect to the same PostgreSQL database containing delegation program uptime data. The API provides structured access while the web interface offers direct database queries for the leaderboard display.
+**Important**: The web component queries the database directly via PHP - it does NOT use the API. Both components connect independently to the same PostgreSQL database containing delegation program uptime data. The API provides structured REST access while the web interface makes direct SQL queries for the leaderboard display.
 
 ## Development Workflow
 
@@ -129,7 +136,19 @@ DEBUG=true
 LOGGING_LEVEL=DEBUG
 DB_CONNECTION_TIMEOUT=10
 DB_RETRY_ATTEMPTS=3
+LOGGING_LOCATION=""  # Empty for console-only (recommended for containers)
 ```
+
+### Common Issues
+
+**API crashes on startup with logging errors**: Set `LOGGING_LOCATION=""` for console-only logging in containerized environments.
+
+**Database connection failures**: Use `/health/ready` endpoint to test connectivity, or run `python diagnose_connection.py` for detailed diagnostics.
+
+**Empty leaderboard (no users displayed)**: Most likely caused by database filtering. The web component filters by `application_status = true AND score IS NOT NULL`. To troubleshoot:
+- Set `IGNORE_APPLICATION_STATUS=1` on the **web deployment** (not API) to bypass application_status filtering
+- Check if users have `application_status = false` or `score = NULL` in the nodes table
+- Use `/health/debug` API endpoint to get database connection details
 
 ## Deployment
 
