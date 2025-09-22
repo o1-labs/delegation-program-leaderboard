@@ -46,7 +46,7 @@ ini_set('error_reporting', E_ALL );
          <div class="row justify-content-center">
             <!-- <div class="uptime-lederboard-topButton"></div> -->
             <div class=" mx-0 px-0 topButton ">
-               <button type="button" class="delegationButton nav-link active" onclick="window.open('https://docs.google.com/forms/d/e/1FAIpQLSduM5EIpwZtf5ohkVepKzs3q0v0--FDEaDfbP2VD4V6GcBepA/viewform')">APPLY FOR DELEGATION <i class="bi bi-arrow-right "></i>
+               <button type="button" class="delegationButton nav-link active" onclick="window.open('<?php $config = include 'config.php'; echo $config['DELEGATION_FORM_URL']; ?>')">APPLY FOR DELEGATION <i class="bi bi-arrow-right "></i>
                </button>
                <div class="bottomPlate for-normal" id="leaderBoardbtn">
                </div>
@@ -62,16 +62,16 @@ ini_set('error_reporting', E_ALL );
             <div class="col-12 col-md-6 mx-0 px-0 Link-responcive">
                <div class="d-xl-flex justify-content-end  mb-2">
                   <div class="flex-column d-sm-block mina-delegation-links">
-                     <div class="text-left"><a class="Mina-Refrance-color alignment-link" href="https://minaprotocol.com/blog/mina-foundation-delegation-policy" target="_blank">Mina Foundation Delegation Policy</a><i class="ml-2 bi bi-box-arrow-up-right Mina-Refrance-color"></i></div>
-                     <div class="text-left"><a class="Mina-Refrance-color alignment-link" href="https://docs.minaprotocol.com/node-operators/delegation-program" target="_blank">Delegation Program Participation Guidelines</a><i class="ml-2 bi bi-box-arrow-up-right Mina-Refrance-color"></i></div>
-                     <div class="text-left"><a class="Mina-Refrance-color alignment-link" href="https://uptime.minaprotocol.com/apidocs/" target="_blank">MINA Open API for Uptime Data</a><i class="ml-2 bi bi-box-arrow-up-right Mina-Refrance-color"></i></div>
+                     <div class="text-left"><a class="Mina-Refrance-color alignment-link" href="<?php $config = include 'config.php'; echo $config['DELEGATION_POLICY_URL']; ?>" target="_blank">Mina Foundation Delegation Policy</a><i class="ml-2 bi bi-box-arrow-up-right Mina-Refrance-color"></i></div>
+                     <div class="text-left"><a class="Mina-Refrance-color alignment-link" href="<?php $config = include 'config.php'; echo $config['DELEGATION_GUIDELINES_URL']; ?>" target="_blank">Delegation Program Participation Guidelines</a><i class="ml-2 bi bi-box-arrow-up-right Mina-Refrance-color"></i></div>
+                     <div class="text-left"><a class="Mina-Refrance-color alignment-link" href="<?php $config = include 'config.php'; echo $config['API_DOCS_URL']; ?>" target="_blank">MINA Open API for Uptime Data</a><i class="ml-2 bi bi-box-arrow-up-right Mina-Refrance-color"></i></div>
                   </div>
                </div>
                <!-- for mobile view -->
                <!-- <div class="d-flex flex-row">
                   <div class="d-flex d-sm-none">
-                     <div class="p-1"><a class="Mina-Refrance-color alignment-link" href="https://docs.minaprotocol.com/en" target="_blank">Foundation Delegation Program</a><i class="ml-2 bi bi-box-arrow-up-right Mina-Refrance-color"></i></div>
-                     <div class="p-1"><a class="Mina-Refrance-color alignment-link" href="https://docs.minaprotocol.com/en/advanced/foundation-delegation-program" target="_blank">Delegation Program Participation Guidelines</a><i class="ml-2 bi bi-box-arrow-up-right Mina-Refrance-color"></i></div>
+                     <div class="p-1"><a class="Mina-Refrance-color alignment-link" href="<?php $config = include 'config.php'; echo $config['FOUNDATION_PROGRAM_URL']; ?>" target="_blank">Foundation Delegation Program</a><i class="ml-2 bi bi-box-arrow-up-right Mina-Refrance-color"></i></div>
+                     <div class="p-1"><a class="Mina-Refrance-color alignment-link" href="<?php $config = include 'config.php'; echo $config['FOUNDATION_GUIDELINES_URL']; ?>" target="_blank">Delegation Program Participation Guidelines</a><i class="ml-2 bi bi-box-arrow-up-right Mina-Refrance-color"></i></div>
                   </div>
                </div> -->
                <!-- <div class="row Link-responcive"> -->

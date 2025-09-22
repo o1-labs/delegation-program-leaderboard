@@ -4,9 +4,13 @@ import os
 
 class BaseConfig(object):
 
-    DEBUG = False
-    LOGGING_LEVEL = logging.INFO
-    LOGGING_LOCATION = str(os.environ["LOGGING_LOCATION"]).strip()
+    DEBUG = os.environ.get("DEBUG", "false").lower() in ("true", "1", "yes", "on")
+    LOGGING_LEVEL = getattr(logging, os.environ.get("LOGGING_LEVEL", "INFO").upper())
+    LOGGING_LOCATION = str(os.environ.get("LOGGING_LOCATION", "./application.log")).strip()
+    
+    # Database connection settings
+    DB_CONNECTION_TIMEOUT = int(os.environ.get("DB_CONNECTION_TIMEOUT", "10"))
+    DB_RETRY_ATTEMPTS = int(os.environ.get("DB_RETRY_ATTEMPTS", "3"))
 
     SNARK_HOST = str(os.environ["SNARK_HOST"]).strip()
     SNARK_PORT = int(os.environ["SNARK_PORT"])
