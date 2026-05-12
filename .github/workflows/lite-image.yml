@@ -1,0 +1,87 @@
+name: Publish uptime-navigator-lite
+
+on:
+  push:
+    tags:
+      - 'lite-v*'
+    branches:
+      - main
+    paths:
+      - 'lite/**'
+      - '.github/workflows/lite-image.yml'
+  pull_request:
+    paths:
+      - 'lite/**'
+      - '.github/workflows/lite-image.yml'
+  workflow_dispatch:
+    inputs:
+      docker_tag_prefix:
+        description: "Docker tag prefix (e.g. adhoc-test)"
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: o1-labs/uptime-navigator-lite
+
+concurrency:
+  group: '${{ github.workflow }} @ ${{ github.head_ref || github.ref }}'
+  cancel-in-progress: true
+
+jobs:
+  build-and-push:
+    name: Build and push image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute tag
+        id: tag
+        run: |
+          SHORT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
+          case "${{ github.event_name }}" in
+            push)
+              if [[ "$GITHUB_REF" == refs/tags/lite-v* ]]; then
+                TAG="${GITHUB_REF#refs/tags/lite-}"
+              else
+                TAG="main-${SHORT_SHA}"
+              fi
+              PUSH=true
+              ;;
+            pull_request)
+              TAG="pr-${{ github.event.pull_request.number }}-${SHORT_SHA}"
+              PUSH=false
+              ;;
+            workflow_dispatch)
+              PREFIX="${{ inputs.docker_tag_prefix }}"
+              BRANCH=$(echo "${GITHUB_REF##*/}" | tr '[:upper:]' '[:lower:]')
+              TAG="${PREFIX}-${BRANCH}-${SHORT_SHA}"
+              PUSH=true
+              ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "push=$PUSH" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        if: steps.tag.outputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build (and conditionally push)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./lite
+          push: ${{ steps.tag.outputs.push }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

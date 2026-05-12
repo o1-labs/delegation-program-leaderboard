@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Uptime Navigator</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>Uptime Navigator</h1>
+    <div class="meta">
+      <span id="submitter-count">—</span> submitters &middot;
+      refreshed <span id="refreshed">—</span>
+      <button id="refresh" type="button">Refresh</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="list">
+      <table id="submitters">
+        <thead>
+          <tr>
+            <th data-sort="submitter">Submitter</th>
+            <th data-sort="submissions" class="num">Submissions</th>
+            <th data-sort="valid" class="num">Valid</th>
+            <th data-sort="invalid" class="num">Invalid</th>
+            <th data-sort="last_seen">Last seen</th>
+            <th data-sort="first_seen">First seen</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p id="empty" hidden>No submissions yet.</p>
+      <p id="error" hidden></p>
+    </section>
+
+    <section id="detail" hidden>
+      <button id="back" type="button">&laquo; Back</button>
+      <h2><code id="detail-pubkey"></code></h2>
+      <table id="detail-rows">
+        <thead>
+          <tr>
+            <th>Submitted at</th>
+            <th>Height</th>
+            <th>Slot</th>
+            <th>Block hash</th>
+            <th>Validation error</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
