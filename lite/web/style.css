@@ -70,6 +70,27 @@ th:hover { background: #ececec; }
 
 td.num, th.num { text-align: right; }
 td.invalid { color: var(--bad); }
+td.ok, span.ok { color: var(--good); }
+td.bad, span.bad { color: var(--bad); }
+td.muted, span.muted { color: var(--muted); }
+
+.summary {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: white;
+  margin-bottom: 12px;
+}
+
+canvas#uptime-sparkline {
+  display: block;
+  width: 100%;
+  max-width: 600px;
+  border: 1px solid var(--border);
+  background: white;
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
 
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

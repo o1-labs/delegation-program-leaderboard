@@ -131,3 +131,59 @@ def test_summary(client, monkeypatch):
     resp = client.get("/api/summary")
     assert resp.status_code == 200
     assert resp.get_json() == rows
+
+
+def test_uptime_returns_coverage(client, monkeypatch):
+    rows = [
+        {"bucket_start": datetime(2026, 5, 12, 9, 0, 0), "submissions": 1, "chain_verified": 1},
+        {"bucket_start": datetime(2026, 5, 12, 9, 5, 0), "submissions": 0, "chain_verified": 0},
+        {"bucket_start": datetime(2026, 5, 12, 9, 10, 0), "submissions": 2, "chain_verified": 0},
+        {"bucket_start": datetime(2026, 5, 12, 9, 15, 0), "submissions": 0, "chain_verified": 0},
+    ]
+    conn, cur = _mock_conn(rows)
+    monkeypatch.setattr(appmod, "get_conn", lambda: conn)
+
+    resp = client.get("/api/uptime/B62qA?window=1&bucket_minutes=5")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["pubkey"] == "B62qA"
+    assert data["window_hours"] == 1
+    assert data["bucket_minutes"] == 5
+    assert data["coverage_pct"] == 50.0  # 2 of 4 buckets had submissions
+    assert data["chain_verified_pct"] == 25.0  # 1 of 4 buckets had a verified one
+    assert data["buckets"][0]["bucket_start"] == "2026-05-12T09:00:00"
+
+    sql, params = cur.execute.call_args[0]
+    assert "generate_series" in sql
+    assert params == (1, 5, 5, "B62qA")
+
+
+def test_uptime_clamps_window(client, monkeypatch):
+    conn, _ = _mock_conn([])
+    monkeypatch.setattr(appmod, "get_conn", lambda: conn)
+
+    resp = client.get("/api/uptime/B62qA?window=9999")
+    assert resp.status_code == 200
+    assert resp.get_json()["window_hours"] == 168  # clamped to max
+
+    resp = client.get("/api/uptime/B62qA?window=0")
+    assert resp.status_code == 200
+    assert resp.get_json()["window_hours"] == 1  # clamped to min
+
+
+def test_uptime_invalid_window(client, monkeypatch):
+    conn, _ = _mock_conn([])
+    monkeypatch.setattr(appmod, "get_conn", lambda: conn)
+
+    resp = client.get("/api/uptime/B62qA?window=foo")
+    assert resp.status_code == 400
+    assert "window" in resp.get_json()["error"]
+
+
+def test_uptime_blocked_by_whitelist(client, monkeypatch):
+    monkeypatch.setenv("WHITELIST", "B62qOther")
+    monkeypatch.setattr(appmod, "get_conn", lambda: _mock_conn([])[0])
+
+    resp = client.get("/api/uptime/B62qA")
+    assert resp.status_code == 404
+    assert resp.get_json() == {"error": "not in whitelist"}

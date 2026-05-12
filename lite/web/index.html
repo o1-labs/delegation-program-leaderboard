@@ -23,10 +23,12 @@
           <tr>
             <th data-sort="submitter">Submitter</th>
             <th data-sort="submissions" class="num">Submissions</th>
-            <th data-sort="valid" class="num">Valid</th>
-            <th data-sort="invalid" class="num">Invalid</th>
+            <th data-sort="chain_verified" class="num" title="Submissions cross-checked against the canonical chain">On chain</th>
+            <th data-sort="chain_rejected" class="num" title="Signed submissions that don't match a canonical block at that height">Off chain</th>
+            <th data-sort="chain_pending" class="num" title="Awaiting the next verifier run">Pending</th>
+            <th data-sort="blocks_produced" class="num" title="Submissions where this BP was the canonical block creator">Blocks produced</th>
+            <th data-sort="max_height" class="num">Max height</th>
             <th data-sort="last_seen">Last seen</th>
-            <th data-sort="first_seen">First seen</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -38,6 +40,9 @@
     <section id="detail" hidden>
       <button id="back" type="button">&laquo; Back</button>
       <h2><code id="detail-pubkey"></code></h2>
+      <div id="uptime-summary" class="summary"></div>
+      <canvas id="uptime-sparkline" width="600" height="60" aria-label="Submission coverage over the last 24 hours"></canvas>
+      <h3>Recent submissions</h3>
       <table id="detail-rows">
         <thead>
           <tr>
@@ -45,6 +50,8 @@
             <th>Height</th>
             <th>Slot</th>
             <th>Block hash</th>
+            <th title="From chain cross-validation">Verified</th>
+            <th>Block creator</th>
             <th>Validation error</th>
           </tr>
         </thead>
