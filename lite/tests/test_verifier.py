@@ -37,7 +37,7 @@ def test_classify_near_canonical_other_creator():
     ]
     verified, err, creator = verifier.classify(row, blocks, WINDOW)
     assert verified is True
-    assert err == "submission-near-canonical-not-by-self"
+    assert err == "submission-near-block-not-by-self"
     # The temporally closest block's creator is reported
     assert creator == "B62qY"
 
@@ -49,7 +49,7 @@ def test_classify_no_canonical_in_window():
     blocks = [_block(100, "B62qZ", submitted - timedelta(minutes=20))]
     verified, err, creator = verifier.classify(row, blocks, WINDOW)
     assert verified is False
-    assert err == "no-canonical-block-near-submission-time"
+    assert err == "no-block-near-submission-time"
     assert creator is None
 
 
@@ -101,7 +101,7 @@ def test_fetch_canonical_blocks_passes_iso_window(monkeypatch):
 
     start = datetime(2026, 5, 12, 11, 30, tzinfo=timezone.utc)
     end = datetime(2026, 5, 12, 11, 40, tzinfo=timezone.utc)
-    blocks = verifier.fetch_canonical_blocks(start, end)
+    blocks = verifier.fetch_best_chain_blocks(start, end)
     assert len(blocks) == 1
     assert blocks[0]["blockHeight"] == 100
     assert blocks[0]["creator"] == "B62qA"
@@ -124,7 +124,7 @@ def test_fetch_canonical_blocks_raises_on_graphql_errors(monkeypatch):
         verifier.requests, "post", MagicMock(return_value=mock_response)
     )
     try:
-        verifier.fetch_canonical_blocks(
+        verifier.fetch_best_chain_blocks(
             datetime(2026, 5, 12, tzinfo=timezone.utc),
             datetime(2026, 5, 13, tzinfo=timezone.utc),
         )
