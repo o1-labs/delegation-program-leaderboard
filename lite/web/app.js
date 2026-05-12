@@ -46,7 +46,6 @@ function renderList() {
       <td class="num bad">${row.chain_rejected ?? 0}</td>
       <td class="num muted">${row.chain_pending ?? 0}</td>
       <td class="num">${row.blocks_produced ?? 0}</td>
-      <td class="num">${row.max_height ?? ""}</td>
       <td>${fmtDate(row.last_seen)}</td>
     `;
     tbody.appendChild(tr);
@@ -118,9 +117,7 @@ async function showDetail(pubkey) {
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${fmtDate(r.submitted_at)}</td>
-        <td class="num">${r.height ?? ""}</td>
-        <td class="num">${r.slot ?? ""}</td>
-        <td><code>${truncate(r.block_hash || "", 20)}</code></td>
+        <td><code>${truncate(r.block_hash || "", 24)}</code></td>
         <td class="num">${verifiedLabel(r.verified)}</td>
         <td><code>${isCreator ? "self" : truncate(r.block_creator || "", 20)}</code></td>
         <td>${r.validation_error || ""}</td>
@@ -128,7 +125,7 @@ async function showDetail(pubkey) {
       detailBody.appendChild(tr);
     }
   } catch (e) {
-    detailBody.innerHTML = `<tr><td colspan="7">Error: ${e.message}</td></tr>`;
+    detailBody.innerHTML = `<tr><td colspan="5">Error: ${e.message}</td></tr>`;
   }
 }
 

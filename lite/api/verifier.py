@@ -1,13 +1,26 @@
-"""One-shot verifier — cross-checks submissions against the canonical chain.
+"""One-shot best-effort verifier — cross-checks submissions against the
+canonical chain by temporal proximity.
 
-Reads rows in `submissions` where `verified IS NULL`, queries archive-node-api
-GraphQL for the canonical blocks in the same height range, and updates each
-row with:
+The uptime-service-backend does not extract state_hash / height / slot from
+the submitted binary payload, so we cannot match a submission to a specific
+block by hash. Instead, for each submission at time T we look up the
+canonical blocks in archive-node-api whose `dateTime` falls within a small
+window around T and classify the submission as:
 
-- `verified=true` when the row's (height, state_hash) matches a canonical block
-- `verified=false` + `validation_error` set, otherwise
-- `block_creator` recording who actually produced the canonical block at that
-  height (NULL if no canonical block exists at that height yet)
+- `verified=true`, `block_creator=submitter` — when a block in the window
+  was produced by the submitter (strong signal: self-produced).
+- `verified=true`, `block_creator=<creator>`, `validation_error="submission-near-canonical-not-by-self"`
+  — when blocks exist in the window but none were produced by the submitter
+  (weak signal: chain healthy, BP was observing).
+- `verified=false`, `validation_error="no-canonical-block-near-submission-time"`
+  — when no canonical block exists in the window (likely chain unhealthy at
+  that time, or the submission referred to a non-canonical fork).
+
+This is intentionally lossy: it cannot distinguish a real submission from a
+replay or a signed-but-fake submission. It only measures "did this BP submit
+near times when the chain was producing canonical blocks". For stricter
+verification, the upstream uptime-service-backend would need to extract the
+submission's state_hash and we'd switch to height-anchored lookups.
 
 Designed to be invoked from a Kubernetes CronJob — runs once and exits. Safe
 to run concurrently or on overlapping windows; the WHERE clause makes the
@@ -18,6 +31,7 @@ import logging
 import os
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
 import psycopg2
@@ -41,7 +55,7 @@ def env(name: str, default: Optional[str] = None) -> str:
 
 ARCHIVE_URL = env("ARCHIVE_NODE_API_URL")
 BATCH_SIZE = int(os.environ.get("VERIFIER_BATCH_SIZE", "500"))
-HEIGHT_BUCKET = int(os.environ.get("VERIFIER_HEIGHT_BUCKET", "100"))
+MATCH_WINDOW_SEC = int(os.environ.get("VERIFIER_MATCH_WINDOW_SEC", "90"))
 GRAPHQL_TIMEOUT = int(os.environ.get("VERIFIER_GRAPHQL_TIMEOUT", "30"))
 MAX_BATCHES = int(os.environ.get("VERIFIER_MAX_BATCHES", "20"))
 
@@ -68,19 +82,38 @@ def ensure_schema(conn) -> None:
     conn.commit()
 
 
-def fetch_canonical_blocks(min_h: int, max_h: int) -> Dict[int, Dict[str, str]]:
-    """Returns {height: {stateHash: creator, ...}, ...} for the canonical chain
-    between [min_h, max_h] inclusive."""
+def _to_utc(dt: datetime) -> datetime:
+    """Treat naive timestamps as UTC; convert aware ones to UTC."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _iso_z(dt: datetime) -> str:
+    """ISO 8601 with explicit Z suffix, what archive-node-api expects."""
+    return _to_utc(dt).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def fetch_canonical_blocks(start: datetime, end: datetime) -> List[Dict]:
+    """Return canonical blocks whose dateTime is in [start, end).
+
+    Each entry: {"blockHeight": int, "creator": str, "stateHash": str,
+                 "dateTime": datetime (UTC, aware)}.
+
+    archive-node-api returns dateTime as a string of unix-millis or ISO; we
+    parse defensively.
+    """
     query = """
-      query($from: Int!, $to: Int!) {
-        blocks(query: {blockHeight_gte: $from, blockHeight_lt: $to, canonical: true}) {
+      query($from: DateTime!, $to: DateTime!) {
+        blocks(query: {dateTime_gte: $from, dateTime_lt: $to, canonical: true}) {
           blockHeight
           creator
           stateHash
+          dateTime
         }
       }
     """
-    variables = {"from": min_h, "to": max_h + 1}
+    variables = {"from": _iso_z(start), "to": _iso_z(end)}
     r = requests.post(
         ARCHIVE_URL,
         json={"query": query, "variables": variables},
@@ -90,22 +123,48 @@ def fetch_canonical_blocks(min_h: int, max_h: int) -> Dict[int, Dict[str, str]]:
     body = r.json()
     if "errors" in body:
         raise RuntimeError(f"GraphQL errors: {body['errors']}")
-    blocks = body.get("data", {}).get("blocks") or []
-    out: Dict[int, Dict[str, str]] = {}
-    for b in blocks:
-        out.setdefault(b["blockHeight"], {})[b["stateHash"]] = b["creator"]
-    return out
+    raw = body.get("data", {}).get("blocks") or []
+    parsed: List[Dict] = []
+    for b in raw:
+        b["dateTime"] = _parse_archive_datetime(b["dateTime"])
+        parsed.append(b)
+    return parsed
 
 
-def classify(row, blocks_at_height: Dict[str, str]) -> Tuple[bool, Optional[str], Optional[str]]:
-    """Return (verified, validation_error, block_creator) for one submission row."""
-    if not blocks_at_height:
-        return False, "no-canonical-block-at-height", None
-    state_hash = row["state_hash"]
-    creator = blocks_at_height.get(state_hash)
-    if creator is not None:
-        return True, None, creator
-    return False, "state-hash-not-on-canonical-chain", None
+def _parse_archive_datetime(value) -> datetime:
+    """archive-node-api returns dateTime as either ISO string or unix-millis
+    string. Handle both."""
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value / 1000.0, tz=timezone.utc)
+    s = str(value)
+    if s.isdigit():
+        return datetime.fromtimestamp(int(s) / 1000.0, tz=timezone.utc)
+    # ISO 8601 — replace trailing Z with +00:00 for fromisoformat
+    s = s.replace("Z", "+00:00")
+    return datetime.fromisoformat(s)
+
+
+def classify(
+    row,
+    blocks: List[Dict],
+    window: timedelta,
+) -> Tuple[bool, Optional[str], Optional[str]]:
+    """Return (verified, validation_error, block_creator) for one row.
+
+    Blocks must already be filtered to canonical blocks anywhere near this
+    row's submitted_at; we narrow to the window here.
+    """
+    submitted = _to_utc(row["submitted_at"])
+    lo, hi = submitted - window, submitted + window
+    nearby = [b for b in blocks if lo <= b["dateTime"] < hi]
+    if not nearby:
+        return False, "no-canonical-block-near-submission-time", None
+    self_blocks = [b for b in nearby if b["creator"] == row["submitter"]]
+    if self_blocks:
+        return True, None, row["submitter"]
+    # Pick the temporally closest block's creator for context
+    closest = min(nearby, key=lambda b: abs(b["dateTime"] - submitted))
+    return True, "submission-near-canonical-not-by-self", closest["creator"]
 
 
 def process_batch() -> int:
@@ -115,12 +174,11 @@ def process_batch() -> int:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 """
-                SELECT id, submitter, state_hash, height
+                SELECT id, submitter, submitted_at
                 FROM submissions
                 WHERE verified IS NULL
-                  AND state_hash IS NOT NULL
-                  AND height IS NOT NULL
-                ORDER BY height ASC
+                  AND submitted_at IS NOT NULL
+                ORDER BY submitted_at ASC
                 LIMIT %s
                 """,
                 (BATCH_SIZE,),
@@ -129,39 +187,30 @@ def process_batch() -> int:
         if not rows:
             return 0
 
-        min_h = min(r["height"] for r in rows)
-        max_h = max(r["height"] for r in rows)
+        window = timedelta(seconds=MATCH_WINDOW_SEC)
+        min_t = _to_utc(min(r["submitted_at"] for r in rows)) - window
+        max_t = _to_utc(max(r["submitted_at"] for r in rows)) + window
         log.info(
-            "Fetched %d unverified rows, height range [%d, %d]",
+            "Fetched %d unverified rows, fetching canonical blocks for [%s, %s)",
             len(rows),
-            min_h,
-            max_h,
+            min_t.isoformat(),
+            max_t.isoformat(),
         )
 
-        canonical: Dict[int, Dict[str, str]] = {}
-        h = min_h
-        while h <= max_h:
-            window_end = min(h + HEIGHT_BUCKET - 1, max_h)
-            window = fetch_canonical_blocks(h, window_end)
-            canonical.update(window)
-            log.info(
-                "Archive returned %d canonical blocks for [%d, %d]",
-                sum(len(v) for v in window.values()),
-                h,
-                window_end,
-            )
-            h = window_end + 1
+        blocks = fetch_canonical_blocks(min_t, max_t)
+        log.info("Archive returned %d canonical blocks in the window", len(blocks))
 
         updates: List[Tuple[bool, Optional[str], Optional[str], int]] = []
-        verified_count = 0
-        unverified_count = 0
+        counts = {"verified_self": 0, "verified_near": 0, "rejected": 0}
         for row in rows:
-            verified, err, creator = classify(row, canonical.get(row["height"], {}))
+            verified, err, creator = classify(row, blocks, window)
             updates.append((verified, err, creator, row["id"]))
-            if verified:
-                verified_count += 1
+            if verified and err is None:
+                counts["verified_self"] += 1
+            elif verified:
+                counts["verified_near"] += 1
             else:
-                unverified_count += 1
+                counts["rejected"] += 1
 
         with conn.cursor() as cur:
             psycopg2.extras.execute_batch(
@@ -178,19 +227,19 @@ def process_batch() -> int:
             )
         conn.commit()
         log.info(
-            "Batch complete: %d verified, %d unverified",
-            verified_count,
-            unverified_count,
+            "Batch complete: %(verified_self)d self-produced, "
+            "%(verified_near)d near-canonical, %(rejected)d rejected",
+            counts,
         )
         return len(updates)
 
 
 def main() -> int:
     log.info(
-        "verifier starting (archive=%s batch=%d bucket=%d max_batches=%d)",
+        "verifier starting (archive=%s batch=%d match_window_sec=%d max_batches=%d)",
         ARCHIVE_URL,
         BATCH_SIZE,
-        HEIGHT_BUCKET,
+        MATCH_WINDOW_SEC,
         MAX_BATCHES,
     )
     total = 0
