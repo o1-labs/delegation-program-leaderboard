@@ -11,3 +11,7 @@ __pycache__/
 
 # macOS
 .DS_Store
+**/.DS_Store
+
+# Session-local agent state
+.memsearch/
