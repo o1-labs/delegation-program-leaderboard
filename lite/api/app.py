@@ -129,25 +129,20 @@ def uptime(pubkey):
                 date_trunc('minute', (SELECT now_at FROM params)),
                 (SELECT bucket FROM params)
             ) AS bucket_start
-        ),
-        hits AS (
-            SELECT date_trunc('minute', submitted_at) -
-                   (EXTRACT(MINUTE FROM submitted_at)::int %% %s) * interval '1 minute'
-                   AS bucket_start,
-                   COUNT(*) AS submissions,
-                   COUNT(*) FILTER (WHERE verified IS TRUE) AS chain_verified
-            FROM submissions
-            WHERE submitter = %s AND submitted_at >= (SELECT since_at FROM params)
-            GROUP BY 1
         )
-        SELECT buckets.bucket_start AS bucket_start,
-               COALESCE(hits.submissions, 0) AS submissions,
-               COALESCE(hits.chain_verified, 0) AS chain_verified
-        FROM buckets LEFT JOIN hits USING (bucket_start)
-        ORDER BY buckets.bucket_start ASC
+        SELECT b.bucket_start AS bucket_start,
+               COUNT(s.id) AS submissions,
+               COUNT(s.id) FILTER (WHERE s.verified IS TRUE) AS chain_verified
+        FROM buckets b
+        LEFT JOIN submissions s
+          ON s.submitter = %s
+         AND s.submitted_at >= b.bucket_start
+         AND s.submitted_at <  b.bucket_start + (SELECT bucket FROM params)
+        GROUP BY b.bucket_start
+        ORDER BY b.bucket_start ASC
     """
     with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute(sql, (window_hours, bucket_minutes, bucket_minutes, pubkey))
+        cur.execute(sql, (window_hours, bucket_minutes, pubkey))
         rows = cur.fetchall()
 
     total_buckets = len(rows)
