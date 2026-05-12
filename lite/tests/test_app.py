@@ -155,6 +155,7 @@ def test_uptime_returns_coverage(client, monkeypatch):
 
     sql, params = cur.execute.call_args[0]
     assert "generate_series" in sql
+    assert "LOCALTIMESTAMP" in sql
     assert params == (1, 5, 5, "B62qA")
 
 
