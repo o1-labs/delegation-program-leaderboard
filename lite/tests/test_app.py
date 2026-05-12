@@ -189,3 +189,95 @@ def test_uptime_blocked_by_whitelist(client, monkeypatch):
     resp = client.get("/api/uptime/B62qA")
     assert resp.status_code == 404
     assert resp.get_json() == {"error": "not in whitelist"}
+
+
+# ---- /api/leaderboard --------------------------------------------------
+
+def _decimal(s):
+    from decimal import Decimal
+    return Decimal(s)
+
+
+def test_leaderboard_defaults_to_production_constants(client, monkeypatch):
+    rows = [
+        {"block_producer_key": "B62qA", "score": 6259, "score_percent": _decimal("99.71"), "surveys": 6480},
+    ]
+    conn, cur = _mock_conn(rows)
+    monkeypatch.setattr(appmod, "get_conn", lambda: conn)
+
+    resp = client.get("/api/leaderboard")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["uptime_days"] == 90
+    assert body["survey_interval_minutes"] == 20
+    assert body["require_verified"] is True
+
+    sql, params = cur.execute.call_args[0]
+    # Default constants flow into the SQL params
+    assert params == [90, 20]
+    # Strict mode injects the verified filter
+    assert "s.verified IS TRUE" in sql
+    # Production score formula
+    assert "COUNT(DISTINCT b.bucket_start)" in sql
+    assert "score::decimal * 100.0" in sql
+    assert "TRUNC" in sql
+
+    [row] = body["rows"]
+    assert row["block_producer_key"] == "B62qA"
+    assert row["score"] == 6259
+    # Decimal converted to float for JSON
+    assert row["score_percent"] == 99.71
+    assert row["surveys"] == 6480
+
+
+def test_leaderboard_require_verified_false_omits_filter(client, monkeypatch):
+    conn, cur = _mock_conn([])
+    monkeypatch.setattr(appmod, "get_conn", lambda: conn)
+
+    client.get("/api/leaderboard?require_verified=false")
+    sql, _ = cur.execute.call_args[0]
+    assert "s.verified IS TRUE" not in sql
+
+
+def test_leaderboard_whitelist_filters(client, monkeypatch):
+    monkeypatch.setenv("WHITELIST", "B62qA,B62qB")
+    conn, cur = _mock_conn([])
+    monkeypatch.setattr(appmod, "get_conn", lambda: conn)
+
+    client.get("/api/leaderboard")
+    sql, params = cur.execute.call_args[0]
+    assert "s.submitter = ANY(%s)" in sql
+    assert params[-1] == ["B62qA", "B62qB"]
+
+
+def test_leaderboard_clamps_window(client, monkeypatch):
+    conn, cur = _mock_conn([])
+    monkeypatch.setattr(appmod, "get_conn", lambda: conn)
+
+    client.get("/api/leaderboard?uptime_days=9999&survey_interval_minutes=99999")
+    body = (
+        client.get("/api/leaderboard?uptime_days=9999&survey_interval_minutes=99999")
+        .get_json()
+    )
+    assert body["uptime_days"] == 365  # clamped to max
+    assert body["survey_interval_minutes"] == 1440  # clamped to max
+
+    body = (
+        client.get("/api/leaderboard?uptime_days=0&survey_interval_minutes=0")
+        .get_json()
+    )
+    assert body["uptime_days"] == 1
+    assert body["survey_interval_minutes"] == 1
+
+
+def test_leaderboard_invalid_params(client, monkeypatch):
+    conn, _ = _mock_conn([])
+    monkeypatch.setattr(appmod, "get_conn", lambda: conn)
+
+    resp = client.get("/api/leaderboard?uptime_days=foo")
+    assert resp.status_code == 400
+    assert "uptime_days" in resp.get_json()["error"]
+
+    resp = client.get("/api/leaderboard?survey_interval_minutes=bar")
+    assert resp.status_code == 400
+    assert "survey_interval_minutes" in resp.get_json()["error"]

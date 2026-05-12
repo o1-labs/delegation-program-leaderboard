@@ -4,13 +4,21 @@ A minimal read-only navigator over the `submissions` table written by
 `uptime-service-backend`. Single container: Flask API + static HTML/JS,
 served on port 8080.
 
+> **Looking for what each metric means and where it's computed?**
+> See [`METRICS.md`](METRICS.md) — full reference with line-pointers
+> to the SQL/Python and the mapping to production's score formula.
+> Limitations are tracked in
+> [issue #9](https://github.com/o1-labs/delegation-program-leaderboard/issues/9).
+
 ## Endpoints
 
 | Path | Purpose |
 |---|---|
 | `GET /` | Static page (`web/index.html`) |
-| `GET /api/submitters` | Distinct submitters with submission counts, last/first seen, valid/invalid counters |
+| `GET /api/submitters` | Distinct submitters with submission counts, last/first seen, valid/invalid + chain-verified counters |
 | `GET /api/submitter/<pubkey>` | Most recent 100 submissions for one BP |
+| `GET /api/uptime/<pubkey>` | Bucketed activity over a window with coverage % |
+| `GET /api/leaderboard` | Production-equivalent score + score_percent per BP |
 | `GET /api/summary` | Daily counts per submitter |
 | `GET /healthz` | DB-reachable ping |
 
@@ -44,3 +52,13 @@ curl localhost:8080/api/submitters
 
 `ghcr.io/o1-labs/uptime-navigator-lite:<tag>` — pushed by
 `.github/workflows/lite-image.yml` on tag push or `workflow_dispatch`.
+
+## Chain cross-validator (CronJob)
+
+The same image, invoked with `python3 /app/api/verifier.py` instead of
+`gunicorn`. Cross-checks each new submission against `archive-node-api`
+to populate the `verified` / `block_creator` / `validation_error`
+columns. Wired up via the `verifier.*` values in
+`o1-labs/helm-charts/uptime-navigator-lite/values.yaml`. Full
+definition and trade-offs in
+[`METRICS.md`](METRICS.md#the-verifier-how-verified-and-block_creator-get-populated).

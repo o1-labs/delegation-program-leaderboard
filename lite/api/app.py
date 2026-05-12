@@ -183,6 +183,99 @@ def submitter(pubkey):
     return jsonify(_row_dates_iso(rows, "submitted_at"))
 
 
+@app.get("/api/leaderboard")
+def leaderboard():
+    """Production-equivalent score formula:
+
+    score = # of survey buckets in [now - uptime_days, now] where the BP
+            had at least one verified=true submission
+    surveys = total survey buckets in the window (no failed-survey concept,
+              so this is a strict upper bound on production's denominator)
+    score_percent = trunc(score * 100.0 / surveys, 2)
+
+    Defaults match production's coordinator config:
+      - uptime_days = UPTIME_DAYS_FOR_SCORE = 90
+      - survey_interval_minutes = SURVEY_INTERVAL_MINUTES = 20
+
+    Strict mode (require_verified=true by default) restricts to rows the
+    temporal verifier marked verified — the closest lite analogue of
+    production's "validated submission". Toggle to false only for raw
+    activity diagnostics.
+    """
+    try:
+        uptime_days = int(request.args.get("uptime_days", "90"))
+    except (TypeError, ValueError):
+        return jsonify(error="uptime_days must be an integer"), 400
+    try:
+        survey_interval_minutes = int(
+            request.args.get("survey_interval_minutes", "20")
+        )
+    except (TypeError, ValueError):
+        return jsonify(error="survey_interval_minutes must be an integer"), 400
+    uptime_days = max(1, min(uptime_days, 365))
+    survey_interval_minutes = max(1, min(survey_interval_minutes, 1440))
+    require_verified = request.args.get("require_verified", "true").lower() != "false"
+
+    keys = whitelist()
+    where_whitelist = ""
+    params: list = [uptime_days, survey_interval_minutes]
+    if keys is not None:
+        where_whitelist = "AND s.submitter = ANY(%s)"
+        params.append(keys)
+
+    verified_filter = "AND s.verified IS TRUE" if require_verified else ""
+
+    sql = f"""
+        WITH params AS (
+            SELECT LOCALTIMESTAMP AS snapshot_date,
+                   LOCALTIMESTAMP - (%s || ' days')::interval AS start_date,
+                   (%s || ' minutes')::interval AS bucket
+        ),
+        buckets AS (
+            SELECT generate_series(
+                date_trunc('minute', (SELECT start_date FROM params)),
+                date_trunc('minute', (SELECT snapshot_date FROM params)),
+                (SELECT bucket FROM params)
+            ) AS bucket_start
+        ),
+        bucket_count AS (
+            SELECT COUNT(*)::int AS total FROM buckets
+        ),
+        scores AS (
+            SELECT s.submitter AS block_producer_key,
+                   COUNT(DISTINCT b.bucket_start) AS score
+            FROM buckets b
+            JOIN submissions s
+              ON s.submitted_at >= b.bucket_start
+             AND s.submitted_at <  b.bucket_start + (SELECT bucket FROM params)
+             {verified_filter}
+             {where_whitelist}
+            GROUP BY s.submitter
+        )
+        SELECT block_producer_key,
+               score,
+               TRUNC((score::decimal * 100.0 / (SELECT total FROM bucket_count)), 2) AS score_percent,
+               (SELECT total FROM bucket_count) AS surveys
+        FROM scores
+        ORDER BY score DESC, block_producer_key ASC
+    """
+
+    with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+
+    for r in rows:
+        if r.get("score_percent") is not None:
+            r["score_percent"] = float(r["score_percent"])
+
+    return jsonify({
+        "uptime_days": uptime_days,
+        "survey_interval_minutes": survey_interval_minutes,
+        "require_verified": require_verified,
+        "rows": rows,
+    })
+
+
 @app.get("/api/summary")
 def summary():
     keys = whitelist()
