@@ -22,6 +22,12 @@ function truncate(s, n = 12) {
   return s.length <= n ? s : `${s.slice(0, n)}…`;
 }
 
+function verifiedLabel(verified) {
+  if (verified === true) return '<span class="ok">✓</span>';
+  if (verified === false) return '<span class="bad">✗</span>';
+  return '<span class="muted">…</span>';
+}
+
 function renderList() {
   const sorted = [...cached].sort((a, b) => {
     const av = a[sortField], bv = b[sortField];
@@ -36,10 +42,12 @@ function renderList() {
     tr.innerHTML = `
       <td><a href="#" data-pk="${row.submitter}"><code>${truncate(row.submitter, 24)}</code></a></td>
       <td class="num">${row.submissions}</td>
-      <td class="num">${row.valid}</td>
-      <td class="num invalid">${row.invalid}</td>
+      <td class="num ok">${row.chain_verified ?? 0}</td>
+      <td class="num bad">${row.chain_rejected ?? 0}</td>
+      <td class="num muted">${row.chain_pending ?? 0}</td>
+      <td class="num">${row.blocks_produced ?? 0}</td>
+      <td class="num">${row.max_height ?? ""}</td>
       <td>${fmtDate(row.last_seen)}</td>
-      <td>${fmtDate(row.first_seen)}</td>
     `;
     tbody.appendChild(tr);
   }
@@ -59,26 +67,68 @@ async function loadList() {
   }
 }
 
+function drawSparkline(canvas, buckets) {
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  if (!buckets || buckets.length === 0) return;
+  const max = buckets.reduce((m, b) => Math.max(m, b.submissions), 1);
+  const barW = w / buckets.length;
+  for (let i = 0; i < buckets.length; i++) {
+    const b = buckets[i];
+    const ratio = b.submissions / max;
+    const barH = Math.max(1, ratio * (h - 4));
+    const x = i * barW;
+    const y = h - barH;
+    ctx.fillStyle = b.chain_verified > 0
+      ? "#1e8449"
+      : b.submissions > 0 ? "#f5b041" : "#dddddd";
+    ctx.fillRect(x + 0.5, y, Math.max(1, barW - 1), barH);
+  }
+}
+
+async function loadUptime(pubkey) {
+  try {
+    const data = await fetchJSON(
+      `/api/uptime/${encodeURIComponent(pubkey)}?window=24&bucket_minutes=15`,
+    );
+    $("#uptime-summary").innerHTML = `
+      Coverage (24h): <strong>${data.coverage_pct}%</strong>
+      &middot; On-chain: <strong>${data.chain_verified_pct}%</strong>
+      &middot; ${data.buckets.length} buckets of ${data.bucket_minutes} min
+    `;
+    drawSparkline($("#uptime-sparkline"), data.buckets);
+  } catch (e) {
+    $("#uptime-summary").textContent = `Uptime unavailable: ${e.message}`;
+  }
+}
+
 async function showDetail(pubkey) {
   detailBody.innerHTML = "";
   $("#detail-pubkey").textContent = pubkey;
   $("#detail").hidden = false;
   $("#list").hidden = true;
+  $("#uptime-summary").textContent = "Loading…";
+  loadUptime(pubkey);
   try {
     const rows = await fetchJSON(`/api/submitter/${encodeURIComponent(pubkey)}`);
     for (const r of rows) {
+      const isCreator = r.block_creator && r.block_creator === pubkey;
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${fmtDate(r.submitted_at)}</td>
         <td class="num">${r.height ?? ""}</td>
         <td class="num">${r.slot ?? ""}</td>
         <td><code>${truncate(r.block_hash || "", 20)}</code></td>
+        <td class="num">${verifiedLabel(r.verified)}</td>
+        <td><code>${isCreator ? "self" : truncate(r.block_creator || "", 20)}</code></td>
         <td>${r.validation_error || ""}</td>
       `;
       detailBody.appendChild(tr);
     }
   } catch (e) {
-    detailBody.innerHTML = `<tr><td colspan="5">Error: ${e.message}</td></tr>`;
+    detailBody.innerHTML = `<tr><td colspan="7">Error: ${e.message}</td></tr>`;
   }
 }
 
