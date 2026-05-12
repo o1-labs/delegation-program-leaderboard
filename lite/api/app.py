@@ -5,6 +5,7 @@ and exposes a small read-only HTTP surface. Optional comma-separated WHITELIST
 env var filters every query to a set of submitter public keys.
 """
 
+import logging
 import os
 
 import psycopg2
@@ -12,6 +13,8 @@ from flask import Flask, jsonify, request, send_from_directory
 from psycopg2.extras import RealDictCursor
 
 WEB_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web")
+
+log = logging.getLogger("navigator")
 
 app = Flask(__name__, static_folder=WEB_ROOT, static_url_path="")
 
@@ -26,6 +29,23 @@ def get_conn():
         sslmode=os.environ.get("POSTGRES_SSLMODE", "disable"),
         connect_timeout=int(os.environ.get("POSTGRES_CONNECT_TIMEOUT", "5")),
     )
+
+
+def ensure_schema() -> None:
+    """Idempotently add columns the navigator queries depend on.
+
+    The fresh-initdb schema in the postgres template already includes
+    block_creator, but existing PVCs deployed before the verifier rolled out
+    don't. Skipping this lets /api/submitters raise UndefinedColumn 500.
+    """
+    try:
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                "ALTER TABLE submissions ADD COLUMN IF NOT EXISTS block_creator TEXT"
+            )
+        log.info("ensure_schema: block_creator column ensured")
+    except Exception:
+        log.exception("ensure_schema failed; navigator may return 5xx until DB is migrated")
 
 
 def whitelist():
@@ -99,8 +119,8 @@ def uptime(pubkey):
 
     sql = """
         WITH params AS (
-            SELECT NOW() AS now_at,
-                   NOW() - (%s || ' hours')::interval AS since_at,
+            SELECT LOCALTIMESTAMP AS now_at,
+                   LOCALTIMESTAMP - (%s || ' hours')::interval AS since_at,
                    (%s || ' minutes')::interval AS bucket
         ),
         buckets AS (
@@ -195,3 +215,6 @@ def summary():
 @app.get("/")
 def root():
     return send_from_directory(WEB_ROOT, "index.html")
+
+
+ensure_schema()
