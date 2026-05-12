@@ -141,6 +141,78 @@ tbody.addEventListener("click", (e) => {
   showDetail(link.dataset.pk);
 });
 
+// --- Leaderboard tab --------------------------------------------------
+
+let lbSortField = "score";
+let lbSortDir = -1;
+let lbCached = [];
+
+function renderLeaderboard() {
+  const tbody = document.querySelector("#leaderboard tbody");
+  const sorted = [...lbCached].sort((a, b) => {
+    const av = a[lbSortField], bv = b[lbSortField];
+    if (av === bv) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return av < bv ? -lbSortDir : lbSortDir;
+  });
+  tbody.innerHTML = "";
+  sorted.forEach((row, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="num muted">${i + 1}</td>
+      <td><code>${truncate(row.block_producer_key, 36)}</code></td>
+      <td class="num">${row.score}</td>
+      <td class="num"><strong>${(row.score_percent ?? 0).toFixed(2)}%</strong></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  $("#lb-empty").hidden = lbCached.length !== 0;
+}
+
+async function loadLeaderboard() {
+  $("#lb-error").hidden = true;
+  const days = $("#lb-uptime-days").value || "90";
+  const interval = $("#lb-survey-min").value || "20";
+  const requireVerified = $("#lb-require-verified").checked;
+  const url = `/api/leaderboard?uptime_days=${days}&survey_interval_minutes=${interval}&require_verified=${requireVerified}`;
+  try {
+    const body = await fetchJSON(url);
+    lbCached = body.rows;
+    $("#lb-meta").textContent =
+      `Window: ${body.uptime_days}d · Survey: ${body.survey_interval_minutes}min ` +
+      `· require_verified=${body.require_verified} · ${lbCached.length} scored BPs`;
+    renderLeaderboard();
+  } catch (e) {
+    $("#lb-error").hidden = false;
+    $("#lb-error").textContent = `Error loading leaderboard: ${e.message}`;
+  }
+}
+
+document.querySelectorAll("#leaderboard thead th").forEach((th) => {
+  th.addEventListener("click", () => {
+    const field = th.dataset.sort;
+    if (!field) return;
+    if (lbSortField === field) lbSortDir = -lbSortDir;
+    else { lbSortField = field; lbSortDir = -1; }
+    renderLeaderboard();
+  });
+});
+
+$("#lb-reload").addEventListener("click", loadLeaderboard);
+
+document.querySelectorAll("nav.tabs .tab").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("nav.tabs .tab").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    const tab = btn.dataset.tab;
+    $("#list").hidden = tab !== "submitters";
+    $("#leaderboard-view").hidden = tab !== "leaderboard";
+    $("#detail").hidden = true;
+    if (tab === "leaderboard" && lbCached.length === 0) loadLeaderboard();
+  });
+});
+
 $("#back").addEventListener("click", hideDetail);
 $("#refresh").addEventListener("click", loadList);
 
