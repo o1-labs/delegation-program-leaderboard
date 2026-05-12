@@ -91,8 +91,7 @@ def submitters():
                COUNT(*) FILTER (WHERE verified IS TRUE) AS chain_verified,
                COUNT(*) FILTER (WHERE verified IS FALSE) AS chain_rejected,
                COUNT(*) FILTER (WHERE verified IS NULL) AS chain_pending,
-               COUNT(*) FILTER (WHERE block_creator = submitter) AS blocks_produced,
-               MAX(height) AS max_height
+               COUNT(*) FILTER (WHERE block_creator = submitter) AS blocks_produced
         FROM submissions
         {where}
         GROUP BY submitter

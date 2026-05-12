@@ -23,11 +23,10 @@
           <tr>
             <th data-sort="submitter">Submitter</th>
             <th data-sort="submissions" class="num">Submissions</th>
-            <th data-sort="chain_verified" class="num" title="Submissions cross-checked against the canonical chain">On chain</th>
-            <th data-sort="chain_rejected" class="num" title="Signed submissions that don't match a canonical block at that height">Off chain</th>
+            <th data-sort="chain_verified" class="num" title="Submissions confirmed by a canonical block near the submission time">On chain</th>
+            <th data-sort="chain_rejected" class="num" title="Submissions with no canonical block in the matching window">Off chain</th>
             <th data-sort="chain_pending" class="num" title="Awaiting the next verifier run">Pending</th>
-            <th data-sort="blocks_produced" class="num" title="Submissions where this BP was the canonical block creator">Blocks produced</th>
-            <th data-sort="max_height" class="num">Max height</th>
+            <th data-sort="blocks_produced" class="num" title="Submissions where a canonical block in the window was created by the submitter">Self-produced</th>
             <th data-sort="last_seen">Last seen</th>
           </tr>
         </thead>
@@ -47,8 +46,6 @@
         <thead>
           <tr>
             <th>Submitted at</th>
-            <th>Height</th>
-            <th>Slot</th>
             <th>Block hash</th>
             <th title="From chain cross-validation">Verified</th>
             <th>Block creator</th>
