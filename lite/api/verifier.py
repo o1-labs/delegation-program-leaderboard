@@ -1,20 +1,25 @@
 """One-shot best-effort verifier — cross-checks submissions against the
-canonical chain by temporal proximity.
+best chain by temporal proximity.
 
 The uptime-service-backend does not extract state_hash / height / slot from
 the submitted binary payload, so we cannot match a submission to a specific
 block by hash. Instead, for each submission at time T we look up the
-canonical blocks in archive-node-api whose `dateTime` falls within a small
+best-chain blocks in archive-node-api whose `dateTime` falls within a small
 window around T and classify the submission as:
+
+We query with `inBestChain: true` rather than `canonical: true` because
+canonical (= finalized k blocks deep) lags far behind the tip on a young
+testnet — at the time of writing, only the genesis block was canonical
+while the chain was at height ~235.
 
 - `verified=true`, `block_creator=submitter` — when a block in the window
   was produced by the submitter (strong signal: self-produced).
-- `verified=true`, `block_creator=<creator>`, `validation_error="submission-near-canonical-not-by-self"`
+- `verified=true`, `block_creator=<creator>`, `validation_error="submission-near-block-not-by-self"`
   — when blocks exist in the window but none were produced by the submitter
   (weak signal: chain healthy, BP was observing).
-- `verified=false`, `validation_error="no-canonical-block-near-submission-time"`
-  — when no canonical block exists in the window (likely chain unhealthy at
-  that time, or the submission referred to a non-canonical fork).
+- `verified=false`, `validation_error="no-block-near-submission-time"`
+  — when no best-chain block exists in the window (likely chain unhealthy at
+  that time, or the submission referred to a dropped fork).
 
 This is intentionally lossy: it cannot distinguish a real submission from a
 replay or a signed-but-fake submission. It only measures "did this BP submit
@@ -94,8 +99,8 @@ def _iso_z(dt: datetime) -> str:
     return _to_utc(dt).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
-def fetch_canonical_blocks(start: datetime, end: datetime) -> List[Dict]:
-    """Return canonical blocks whose dateTime is in [start, end).
+def fetch_best_chain_blocks(start: datetime, end: datetime) -> List[Dict]:
+    """Return best-chain blocks whose dateTime is in [start, end).
 
     Each entry: {"blockHeight": int, "creator": str, "stateHash": str,
                  "dateTime": datetime (UTC, aware)}.
@@ -105,7 +110,7 @@ def fetch_canonical_blocks(start: datetime, end: datetime) -> List[Dict]:
     """
     query = """
       query($from: DateTime!, $to: DateTime!) {
-        blocks(query: {dateTime_gte: $from, dateTime_lt: $to, canonical: true}) {
+        blocks(query: {dateTime_gte: $from, dateTime_lt: $to, inBestChain: true}) {
           blockHeight
           creator
           stateHash
@@ -151,20 +156,20 @@ def classify(
 ) -> Tuple[bool, Optional[str], Optional[str]]:
     """Return (verified, validation_error, block_creator) for one row.
 
-    Blocks must already be filtered to canonical blocks anywhere near this
+    Blocks must already be filtered to best-chain blocks anywhere near this
     row's submitted_at; we narrow to the window here.
     """
     submitted = _to_utc(row["submitted_at"])
     lo, hi = submitted - window, submitted + window
     nearby = [b for b in blocks if lo <= b["dateTime"] < hi]
     if not nearby:
-        return False, "no-canonical-block-near-submission-time", None
+        return False, "no-block-near-submission-time", None
     self_blocks = [b for b in nearby if b["creator"] == row["submitter"]]
     if self_blocks:
         return True, None, row["submitter"]
     # Pick the temporally closest block's creator for context
     closest = min(nearby, key=lambda b: abs(b["dateTime"] - submitted))
-    return True, "submission-near-canonical-not-by-self", closest["creator"]
+    return True, "submission-near-block-not-by-self", closest["creator"]
 
 
 def process_batch() -> int:
@@ -191,14 +196,14 @@ def process_batch() -> int:
         min_t = _to_utc(min(r["submitted_at"] for r in rows)) - window
         max_t = _to_utc(max(r["submitted_at"] for r in rows)) + window
         log.info(
-            "Fetched %d unverified rows, fetching canonical blocks for [%s, %s)",
+            "Fetched %d unverified rows, fetching best-chain blocks for [%s, %s)",
             len(rows),
             min_t.isoformat(),
             max_t.isoformat(),
         )
 
-        blocks = fetch_canonical_blocks(min_t, max_t)
-        log.info("Archive returned %d canonical blocks in the window", len(blocks))
+        blocks = fetch_best_chain_blocks(min_t, max_t)
+        log.info("Archive returned %d best-chain blocks in the window", len(blocks))
 
         updates: List[Tuple[bool, Optional[str], Optional[str], int]] = []
         counts = {"verified_self": 0, "verified_near": 0, "rejected": 0}
