@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
 
       - name: 🏷️ Generate Tag
         run: |
@@ -46,21 +46,21 @@ jobs:
           fi
 
       - name: 🔑 Log in to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🛠️ Build and Push Web Docker Image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           context: ./web
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.REPO_LOWER }}-${{ env.REPOSITORY_NAME_WEB }}:${{ env.TAG }}
 
       - name: 🛠️ Build and Push API Docker Image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v7
         with:
           context: ./api
           push: true

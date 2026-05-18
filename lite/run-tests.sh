@@ -18,3 +18,12 @@ python3 -m pip install --quiet --upgrade pip
 python3 -m pip install --quiet -r api/requirements-dev.txt
 
 python3 -m pytest tests/ -v
+
+# JS tests for the client-side CSV helpers. ubuntu-latest GitHub runners
+# ship Node 20+ pre-installed, which provides the stable node:test runner.
+# Skip locally if node is missing rather than failing the whole script.
+if command -v node >/dev/null 2>&1; then
+  node --test tests/test_csv.js
+else
+  echo "WARN: node not found; skipping JS unit tests for csv.js."
+fi

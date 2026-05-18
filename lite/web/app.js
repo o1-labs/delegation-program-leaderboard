@@ -216,6 +216,61 @@ document.querySelectorAll("nav.tabs .tab").forEach((btn) => {
 $("#back").addEventListener("click", hideDetail);
 $("#refresh").addEventListener("click", loadList);
 
+const SUBMITTERS_COLUMNS = [
+  { header: "submitter",       key: "submitter" },
+  { header: "submissions",     key: "submissions" },
+  { header: "chain_verified",  key: "chain_verified" },
+  { header: "chain_rejected",  key: "chain_rejected" },
+  { header: "chain_pending",   key: "chain_pending" },
+  { header: "blocks_produced", key: "blocks_produced" },
+  { header: "valid",           key: "valid" },
+  { header: "invalid",         key: "invalid" },
+  { header: "first_seen",      key: "first_seen" },
+  { header: "last_seen",       key: "last_seen" },
+];
+
+const LEADERBOARD_COLUMNS = [
+  { header: "rank",               value: (_r, i) => i + 1 },
+  { header: "block_producer_key", key: "block_producer_key" },
+  { header: "score",              key: "score" },
+  { header: "score_percent",      key: "score_percent" },
+];
+
+$("#export-csv").addEventListener("click", async () => {
+  const btn = $("#export-csv");
+  btn.disabled = true;
+  const prev = btn.textContent;
+  btn.textContent = "Exporting…";
+  try {
+    const days     = $("#lb-uptime-days").value || "90";
+    const interval = $("#lb-survey-min").value || "20";
+    const verified = $("#lb-require-verified").checked;
+    const lbURL = `/api/leaderboard?uptime_days=${days}` +
+                  `&survey_interval_minutes=${interval}` +
+                  `&require_verified=${verified}`;
+    const [submitters, lb] = await Promise.all([
+      fetchJSON("/api/submitters"),
+      fetchJSON(lbURL),
+    ]);
+    const stamp = tsStamp();
+    downloadCSV(
+      `submitters-${stamp}.csv`,
+      arrayToCSV(submitters, SUBMITTERS_COLUMNS),
+    );
+    setTimeout(() => {
+      downloadCSV(
+        `leaderboard-${days}d-${interval}m-${verified ? "verified" : "all"}-${stamp}.csv`,
+        arrayToCSV(lb.rows, LEADERBOARD_COLUMNS),
+      );
+    }, 150);
+  } catch (e) {
+    alert(`Export failed: ${e.message}`);
+  } finally {
+    btn.textContent = prev;
+    btn.disabled = false;
+  }
+});
+
 document.querySelectorAll("#submitters thead th").forEach((th) => {
   th.addEventListener("click", () => {
     const field = th.dataset.sort;
