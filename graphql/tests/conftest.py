@@ -11,9 +11,10 @@ from uptime_graphql.config import Settings
 
 BATCH = 1200  # 20-minute survey interval
 DAY_BATCHES = 72
-# End of the latest batch. Aligned but not tied to now(): uptime is anchored
-# on the batches, only isUp depends on the clock.
-END = int(datetime.now(UTC).timestamp()) // BATCH * BATCH
+# End of the latest batch: the last midnight UTC, so that hour and day
+# buckets hold whole batches. Not tied to now(): uptime is anchored on the
+# batches, only isUp depends on the clock.
+END = int(datetime.now(UTC).timestamp()) // 86400 * 86400
 # Batch index k covers [END - (k + 1) * BATCH, END - k * BATCH]; k = 0 is the latest.
 EXCLUDED_K = 5
 MONTH_BATCHES = 30 * DAY_BATCHES
@@ -22,6 +23,10 @@ ALWAYS = "B62qalways"  # a point in every batch, from two `nodes` rows
 LAST_DAY = "B62qlastday"  # points only in the last day
 SUBMITS_ONLY = "B62qsubmitsonly"  # scored row, no points, recent submission
 UNSCORED = "B62qunscored"  # not in nodes, last submission 2 hours ago
+# Activity patterns over the last 2 days before END, one submission every 5 min:
+SHUTDOWN = "B62qshutdown"  # accepted and scored until END - 1 day, then nothing
+FLAKY = "B62qflaky"  # submits until END; every second hour fails and scores nothing
+ACTIVITY_FROM = END - 2 * 86400
 
 
 @pytest.fixture(scope="session")
@@ -79,6 +84,29 @@ def seed(conn):
         submission(SUBMITS_ONLY, now - timedelta(minutes=60))
         submission(SUBMITS_ONLY, now - timedelta(minutes=10))
         submission(UNSCORED, now - timedelta(hours=2))
+
+        def every_5_min(key, start, end, failed=lambda t: False):
+            rows = []
+            for t in range(start, end, 300):
+                at = datetime.fromtimestamp(t, UTC).replace(tzinfo=None)
+                bad = failed(t)
+                rows.append((at.date(), at, key, "sok mismatch" if bad else None, not bad))
+            cur.executemany(
+                "INSERT INTO submissions (submitted_at_date, submitted_at, submitter,"
+                " validation_error, verified) VALUES (%s, %s, %s, %s, %s)",
+                rows,
+            )
+
+        def even_hour(t):
+            return (t - ACTIVITY_FROM) // 3600 % 2 == 0
+
+        every_5_min(SHUTDOWN, END - 3 * 86400, END - 86400)
+        points(node(SHUTDOWN, True), range(DAY_BATCHES, 3 * DAY_BATCHES))
+        every_5_min(FLAKY, ACTIVITY_FROM, END, failed=even_hour)
+        points(
+            node(FLAKY, True),
+            [k for k in range(2 * DAY_BATCHES) if not even_hour(END - (k + 1) * BATCH)],
+        )
 
 
 @pytest.fixture(scope="session")

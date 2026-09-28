@@ -21,7 +21,7 @@ Every function takes a list of keys and returns one result per key, in the
 same order, so that the GraphQL layer can batch lookups with a DataLoader.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from psycopg_pool import AsyncConnectionPool
 
@@ -92,6 +92,84 @@ LIMIT %(limit)s
 
 LAST_BATCH_SQL = "SELECT max(batch_end_epoch) FROM bot_logs"
 
+# Activity histogram over [start, end) in buckets of `size` seconds; bucket i
+# starts at start + i * size. A batch belongs to the bucket in which it starts.
+ACTIVITY_BATCHES_SQL = """
+SELECT (batch_start_epoch - %(start)s) / %(size)s AS i, count(*)
+FROM bot_logs
+WHERE batch_start_epoch >= %(start)s AND batch_start_epoch < %(end)s
+  AND files_processed > -1
+GROUP BY 1
+"""
+
+ACTIVITY_POINTS_SQL = """
+WITH win AS (
+    SELECT id, (batch_start_epoch - %(start)s) / %(size)s AS i
+    FROM bot_logs
+    WHERE batch_start_epoch >= %(start)s AND batch_start_epoch < %(end)s
+      AND files_processed > -1
+),
+nd AS (SELECT id, block_producer_key AS key FROM nodes WHERE block_producer_key = ANY(%(keys)s)),
+per_node AS (
+    SELECT ps.node_id, win.i, count(*) AS points
+    FROM points_summary ps
+    JOIN win ON win.id = ps.bot_log_id
+    WHERE ps.node_id IN (SELECT id FROM nd)
+    GROUP BY 1, 2
+)
+SELECT nd.key, per_node.i, max(per_node.points)
+FROM per_node JOIN nd ON nd.id = per_node.node_id
+GROUP BY 1, 2
+"""
+
+# accepted = what the coordinator scores (coordinator.load_submissions):
+# verified and no validation_error. failed = verified false or an error.
+# The rest (verified IS NULL, no error) is not verified yet.
+ACTIVITY_SUBMISSIONS_SQL = """
+SELECT submitter,
+       (extract(epoch FROM submitted_at)::bigint - %(start)s) / %(size)s AS i,
+       count(*),
+       count(*) FILTER (WHERE verified AND coalesce(validation_error, '') = ''),
+       count(*) FILTER (WHERE verified IS FALSE OR coalesce(validation_error, '') <> '')
+FROM submissions
+WHERE submitter = ANY(%(keys)s)
+  AND submitted_at >= %(start_ts)s AND submitted_at < %(end_ts)s
+GROUP BY 1, 2
+"""
+
+# Gaps between consecutive submissions of each key in [start_ts, end_ts).
+# The range start counts as a submission before the first one and the range
+# end as one after the last one, so a silence at either end is a gap too, and
+# a key with no submission has one gap over the whole range. Returns the gaps
+# of at least min_gap and the longest gap(s) of each key (is_longest).
+#
+# Per key (LATERAL) so that each window runs over one BP's rows only;
+# lead() over submitted_at DESC follows idx_submissions_submitter_datetime and
+# needs no sort, and the trailing gap is a top-1 lookup on the same index.
+# 300 BPs x 30 days (2.5M submissions) take about 2.6 s.
+SILENCES_SQL = """
+SELECT k.key, x.gap_start, x.gap_end, x.gap = x.longest
+FROM unnest(%(keys)s::text[]) AS k(key)
+CROSS JOIN LATERAL (
+    SELECT gap_start, gap_end, gap_end - gap_start AS gap, max(gap_end - gap_start) OVER () AS longest
+    FROM (
+        SELECT lead(submitted_at, 1, %(start_ts)s::timestamp) OVER (ORDER BY submitted_at DESC) AS gap_start,
+               submitted_at AS gap_end
+        FROM submissions
+        WHERE submitter = k.key AND submitted_at >= %(start_ts)s AND submitted_at < %(end_ts)s
+        UNION ALL
+        SELECT coalesce(
+                   (SELECT max(submitted_at) FROM submissions
+                    WHERE submitter = k.key AND submitted_at >= %(start_ts)s AND submitted_at < %(end_ts)s),
+                   %(start_ts)s::timestamp),
+               %(end_ts)s::timestamp
+    ) g
+    WHERE gap_end > gap_start
+) x
+WHERE x.gap >= %(min_gap)s OR x.gap = x.longest
+ORDER BY 1, 2
+"""
+
 
 def epoch_to_utc(epoch):
     return None if epoch is None else datetime.fromtimestamp(epoch, tz=UTC)
@@ -100,6 +178,10 @@ def epoch_to_utc(epoch):
 def naive_to_utc(value):
     # submissions.submitted_at is TIMESTAMP without time zone, written in UTC.
     return None if value is None else value.replace(tzinfo=UTC)
+
+
+def utc_to_naive(value):
+    return value.astimezone(UTC).replace(tzinfo=None)
 
 
 def percent(points, batches):
@@ -163,3 +245,44 @@ class Database:
     async def last_batch_end(self):
         rows = await self._fetch(LAST_BATCH_SQL)
         return rows[0][0]
+
+    async def activity(self, keys, start, end, size):
+        """Histogram over [start, end) (epoch seconds, buckets of `size`).
+
+        -> per key: list of [submissions, accepted, failed, batches, points]
+        per bucket.
+        """
+        params = {
+            "keys": list(keys),
+            "start": start,
+            "end": end,
+            "size": size,
+            "start_ts": utc_to_naive(epoch_to_utc(start)),
+            "end_ts": utc_to_naive(epoch_to_utc(end)),
+        }
+        count = (end - start) // size
+        batches = [0] * count
+        for i, n in await self._fetch(ACTIVITY_BATCHES_SQL, params):
+            batches[i] = n
+        result = {key: [[0, 0, 0, batches[i], 0] for i in range(count)] for key in keys}
+        for key, i, n in await self._fetch(ACTIVITY_POINTS_SQL, params):
+            result[key][i][4] = n
+        for key, i, n, accepted, failed in await self._fetch(ACTIVITY_SUBMISSIONS_SQL, params):
+            result[key][i][0:3] = [n, accepted, failed]
+        return [result[key] for key in keys]
+
+    async def silences(self, keys, start_ts, end_ts, min_minutes):
+        """-> per key: [(gap_start, gap_end, is_longest)] in UTC, by gap_start."""
+        rows = await self._fetch(
+            SILENCES_SQL,
+            {
+                "keys": list(keys),
+                "start_ts": utc_to_naive(start_ts),
+                "end_ts": utc_to_naive(end_ts),
+                "min_gap": timedelta(minutes=min_minutes),
+            },
+        )
+        result = {key: [] for key in keys}
+        for key, gap_start, gap_end, longest in rows:
+            result[key].append((naive_to_utc(gap_start), naive_to_utc(gap_end), longest))
+        return [result[key] for key in keys]

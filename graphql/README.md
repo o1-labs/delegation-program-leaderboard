@@ -5,7 +5,9 @@ database. For each block producer (BP) it gives:
 
 - uptime over the last day, week and month;
 - whether the BP is up now (it sent a submission recently);
-- the official 90-day score that the coordinator stores.
+- the official 90-day score that the coordinator stores;
+- an activity histogram over a custom date range, to tell a BP that shut
+  its node down from a BP that runs a node with problems.
 
 Single container: Strawberry GraphQL on Starlette/uvicorn, port 8080.
 The deployment puts it behind the o1labs oauth2-proxy (internal only).
@@ -37,6 +39,46 @@ The deployment puts it behind the o1labs oauth2-proxy (internal only).
   }
 }
 ```
+
+## Activity histogram: shut down, or problems?
+
+```graphql
+{
+  blockProducer(publicKey: "B62q...") {
+    activity(from: "2026-09-01T00:00:00Z", to: "2026-09-15T00:00:00Z", bucket: HOUR) {
+      totals { submissions acceptedSubmissions failedSubmissions batches points percent
+               bucketsWithSubmissions bucketCount }
+      buckets { start submissions acceptedSubmissions failedSubmissions batches points percent }
+      silences(minMinutes: 60) { start end minutes openEnded }
+      longestSilence { start end minutes openEnded }
+    }
+  }
+}
+```
+
+- `bucket`: `BATCH` (20 min, one coordinator batch), `HOUR` or `DAY`. The
+  range is widened to whole buckets and ends at most at the current time.
+  `from`/`to` without a time zone are UTC.
+- Each bucket counts the submissions of the BP (all / `accepted`: verified
+  without error, the ones the coordinator scores / `failed`: verified false or
+  a validation error; the rest is not verified yet), the coordinator batches
+  that start in the bucket, and the batches in which the BP earned its point.
+- A **silence** is a period without any submission. The range start and end
+  count as its limits, so a BP that never submitted has one silence over the
+  whole range. `openEnded` means the BP did not come back before `to`.
+
+How to read it:
+
+| Pattern | Likely cause |
+|---|---|
+| One long silence, `openEnded`, submissions and points 0 after it | Node shut down (or the uptime submission turned off) |
+| One long silence that closes, then normal buckets | Outage or maintenance, node came back |
+| Submissions in (almost) every bucket, many `failedSubmissions` | Node runs, but its submissions fail verification (wrong version, SNARK work problems, fork mismatch) |
+| Submissions accepted, but `points` < `batches` | Node runs, but its blocks are not on the chain the coordinator selects (sync or fork problems) |
+| Many short silences | Unstable node or network: restarts, crashes, connectivity |
+
+Two BPs can have the same uptime percent with different causes; the test
+suite has one example of each (`B62qshutdown`, `B62qflaky`: both 50.34%).
 
 ## What the numbers mean
 
@@ -81,6 +123,9 @@ also finds a BP that has only submissions; it returns null for an unknown key.
 | `MAX_QUERY_DEPTH` | no | `8` | the deepest useful query has depth 3 |
 | `STATEMENT_TIMEOUT_MS` | no | `10000` | per SQL statement |
 | `DB_POOL_MAX_SIZE` | no | `4` | connections per pod |
+| `MAX_ACTIVITY_DAYS` | no | `92` | longest `activity` range |
+| `MAX_ACTIVITY_BUCKETS` | no | `2500` | most buckets in one `activity` |
+| `MAX_REQUEST_BUCKETS` | no | `50000` | most buckets of all `activity` fields in one request |
 
 The service also opens its sessions with `default_transaction_read_only=on`,
 so it cannot write even with a read-write user.
@@ -92,7 +137,19 @@ Measured on PostgreSQL 16 with 300 BPs, 90 days of batches (1.75M
 BPs with the three windows, `isUp` and `officialScore` takes about 175 ms.
 The queries use only existing indexes (`uq_ps_bot_log_node`,
 `idx_submissions_submitter_datetime`). A per-request DataLoader makes one
-SQL query per field and window, not one per BP.
+SQL query per field and argument set, not one per BP.
+
+`activity` over 30 days, same data:
+
+| Request | Time |
+|---|---|
+| 1 BP, `HOUR` buckets, silences, longest silence | 0.1 s |
+| 300 BPs, `DAY` buckets and totals | 1.6 s |
+| 50 BPs, `HOUR` buckets | 2.2 s |
+| 300 BPs, longest silence | 3.5 s |
+
+300 BPs with `HOUR` buckets (216,000 buckets) is refused by
+`MAX_REQUEST_BUCKETS`; ask for a smaller page or a larger bucket.
 
 ## Tests
 

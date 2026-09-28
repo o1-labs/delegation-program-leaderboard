@@ -26,6 +26,11 @@ class Settings:
     max_query_depth: int = 8
     statement_timeout_ms: int = 10_000
     pool_max_size: int = 4
+    # activity(): longest range and most buckets per BP in one query.
+    max_activity_days: int = 92
+    max_activity_buckets: int = 2500
+    # Buckets of all activity() fields in one request, e.g. a page of BPs.
+    max_request_buckets: int = 50_000
 
     @classmethod
     def from_env(cls, env=None):
@@ -49,4 +54,7 @@ class Settings:
             max_query_depth=_int(env, "MAX_QUERY_DEPTH", 8, 3, 20),
             statement_timeout_ms=_int(env, "STATEMENT_TIMEOUT_MS", 10_000, 100, 600_000),
             pool_max_size=_int(env, "DB_POOL_MAX_SIZE", 4, 1, 50),
+            max_activity_days=_int(env, "MAX_ACTIVITY_DAYS", 92, 1, 3660),
+            max_activity_buckets=_int(env, "MAX_ACTIVITY_BUCKETS", 2500, 1, 100_000),
+            max_request_buckets=_int(env, "MAX_REQUEST_BUCKETS", 50_000, 1, 10_000_000),
         )

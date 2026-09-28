@@ -47,6 +47,8 @@ CREATE TABLE submissions (
     id SERIAL PRIMARY KEY,
     submitted_at_date DATE NOT NULL,
     submitted_at TIMESTAMP NOT NULL,
-    submitter TEXT NOT NULL
+    submitter TEXT NOT NULL,
+    validation_error TEXT,
+    verified BOOLEAN
 );
 CREATE INDEX idx_submissions_submitter_datetime ON submissions (submitter, submitted_at DESC);

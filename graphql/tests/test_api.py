@@ -1,13 +1,16 @@
 import asyncio
-from datetime import UTC, datetime
+import dataclasses
+from datetime import UTC, datetime, timedelta
 
 import pytest
+from starlette.testclient import TestClient
 
+from uptime_graphql.app import create_app
 from uptime_graphql.config import Settings
 from uptime_graphql.db import percent
 from uptime_graphql.schema import build_schema
 
-from .conftest import ALWAYS, END, LAST_DAY, SUBMITS_ONLY, UNSCORED
+from .conftest import ACTIVITY_FROM, ALWAYS, END, FLAKY, LAST_DAY, SHUTDOWN, SUBMITS_ONLY, UNSCORED
 
 END_ISO = datetime.fromtimestamp(END, tz=UTC).isoformat()
 
@@ -67,7 +70,9 @@ def test_is_up_uses_last_submission(gql):
 
 
 def test_is_up_rejects_bad_window(gql):
-    result = gql('query ($k: String!) { blockProducer(publicKey: $k) { isUp(withinMinutes: 0) } }', k=SUBMITS_ONLY)
+    result = gql(
+        "query ($k: String!) { blockProducer(publicKey: $k) { isUp(withinMinutes: 0) } }", k=SUBMITS_ONLY
+    )
     assert "withinMinutes" in result["errors"][0]["message"]
 
 
@@ -83,11 +88,15 @@ def test_pagination_and_filter(gql):
       }
     }
     """
-    first = gql(page)["data"]["blockProducers"]
-    assert [i["publicKey"] for i in first["items"]] == [ALWAYS, LAST_DAY]
-    assert first["nextCursor"] == LAST_DAY
-    second = gql(page, after=first["nextCursor"])["data"]["blockProducers"]
-    assert second == {"items": [{"publicKey": SUBMITS_ONLY}], "nextCursor": None}
+    keys, after = [], None
+    while True:
+        result = gql(page, after=after)["data"]["blockProducers"]
+        keys += [i["publicKey"] for i in result["items"]]
+        after = result["nextCursor"]
+        if after is None:
+            break
+        assert after == keys[-1]
+    assert keys == [ALWAYS, FLAKY, LAST_DAY, SHUTDOWN, SUBMITS_ONLY]
     rejected = gql(page, status=False)["data"]["blockProducers"]
     assert rejected["items"] == [{"publicKey": SUBMITS_ONLY}]
 
@@ -95,7 +104,7 @@ def test_pagination_and_filter(gql):
 def test_list_with_uptime_batches_queries(gql):
     query = "{ blockProducers(first: 2) { items { publicKey isUp uptime(window: WEEK) { percent } } } }"
     items = gql(query)["data"]["blockProducers"]["items"]
-    assert [i["uptime"]["percent"] for i in items] == [100.0, 14.11]
+    assert [i["uptime"]["percent"] for i in items] == [100.0, 14.31]
 
 
 def test_page_size_limit(gql):
@@ -134,3 +143,146 @@ def test_percent_truncates(points, batches, expected):
 def test_settings_require_postgres():
     with pytest.raises(RuntimeError, match="POSTGRES_HOST"):
         Settings.from_env({"POSTGRES_DB": "x", "POSTGRES_USER": "x", "POSTGRES_PASSWORD": "x"})
+
+
+ACTIVITY = """
+query ($key: String!, $from: DateTime!, $to: DateTime!, $bucket: BucketSize) {
+  blockProducer(publicKey: $key) {
+    activity(from: $from, to: $to, bucket: $bucket) {
+      from to bucket
+      buckets { start end submissions acceptedSubmissions failedSubmissions batches points percent }
+      totals {
+        submissions acceptedSubmissions failedSubmissions batches points percent
+        bucketsWithSubmissions bucketCount
+      }
+      silences { start end minutes openEnded }
+      longestSilence { minutes openEnded }
+    }
+  }
+}
+"""
+
+
+def iso(epoch):
+    return datetime.fromtimestamp(epoch, tz=UTC).isoformat()
+
+
+def activity(gql, key, frm=ACTIVITY_FROM, to=END, bucket="HOUR"):
+    result = gql(ACTIVITY, key=key, **{"from": iso(frm), "to": iso(to), "bucket": bucket})
+    assert "errors" not in result, result["errors"]
+    return result["data"]["blockProducer"]["activity"]
+
+
+def bucket(start, submissions, accepted, failed, batches, points):
+    return {
+        "start": iso(start),
+        "end": iso(start + 3600),
+        "submissions": submissions,
+        "acceptedSubmissions": accepted,
+        "failedSubmissions": failed,
+        "batches": batches,
+        "points": points,
+        "percent": percent(points, batches),
+    }
+
+
+def test_activity_shutdown_node(gql):
+    # Same 2-day uptime as the flaky node, but one open-ended silence.
+    a = activity(gql, SHUTDOWN)
+    assert (a["from"], a["to"], a["bucket"]) == (iso(ACTIVITY_FROM), iso(END), "HOUR")
+    assert len(a["buckets"]) == 48
+    assert a["buckets"][0] == bucket(ACTIVITY_FROM, 12, 12, 0, 3, 3)
+    assert a["buckets"][30] == bucket(ACTIVITY_FROM + 30 * 3600, 0, 0, 0, 3, 0)
+    # The excluded batch starts in hour 46.
+    assert a["buckets"][46]["batches"] == 2
+    assert a["totals"] == {
+        "submissions": 288,
+        "acceptedSubmissions": 288,
+        "failedSubmissions": 0,
+        "batches": 143,
+        "points": 72,
+        "percent": 50.34,
+        "bucketsWithSubmissions": 24,
+        "bucketCount": 48,
+    }
+    last = END - 86400 - 300
+    assert a["silences"] == [{"start": iso(last), "end": iso(END), "minutes": 1445, "openEnded": True}]
+    assert a["longestSilence"] == {"minutes": 1445, "openEnded": True}
+
+
+def test_activity_node_with_problems(gql):
+    a = activity(gql, FLAKY)
+    assert a["buckets"][0] == bucket(ACTIVITY_FROM, 12, 0, 12, 3, 0)
+    assert a["buckets"][1] == bucket(ACTIVITY_FROM + 3600, 12, 12, 0, 3, 3)
+    assert a["totals"] == {
+        "submissions": 576,
+        "acceptedSubmissions": 288,
+        "failedSubmissions": 288,
+        "batches": 143,
+        "points": 72,
+        "percent": 50.34,
+        "bucketsWithSubmissions": 48,
+        "bucketCount": 48,
+    }
+    assert a["silences"] == []
+    assert a["longestSilence"] == {"minutes": 5, "openEnded": False}
+
+
+def test_activity_day_buckets_and_no_submissions(gql):
+    a = activity(gql, LAST_DAY, bucket="DAY")
+    assert [(b["submissions"], b["batches"], b["points"]) for b in a["buckets"]] == [(0, 72, 0), (0, 71, 71)]
+    # No submission at all: one silence over the whole range.
+    assert a["silences"] == [
+        {"start": iso(ACTIVITY_FROM), "end": iso(END), "minutes": 2880, "openEnded": True}
+    ]
+
+
+def test_activity_range_is_widened_to_buckets_and_ends_now(gql):
+    now = datetime.now(UTC)
+    a = activity(gql, SUBMITS_ONLY, frm=END - 1800, to=int((now + timedelta(days=1)).timestamp()))
+    assert a["from"] == iso(END - 3600)
+    assert datetime.fromisoformat(a["to"]) - now < timedelta(minutes=1)
+    assert a["totals"]["submissions"] == 2
+
+
+def test_activity_for_a_list_of_bps(gql):
+    query = """
+    query ($from: DateTime!, $to: DateTime!) {
+      blockProducers(first: 2, after: "B62qflaky") {
+        items { publicKey activity(from: $from, to: $to, bucket: DAY) { totals { points } longestSilence { minutes } } }
+      }
+    }
+    """
+    items = gql(query, **{"from": iso(ACTIVITY_FROM), "to": iso(END)})["data"]["blockProducers"]["items"]
+    assert [(i["publicKey"], i["activity"]["totals"]["points"]) for i in items] == [
+        (LAST_DAY, 71),
+        (SHUTDOWN, 72),
+    ]
+    assert [i["activity"]["longestSilence"]["minutes"] for i in items] == [2880, 1445]
+
+
+@pytest.mark.parametrize(
+    "frm,to,bucket,error",
+    [
+        (END, END - 3600, "HOUR", "from must be before to"),
+        (END - 93 * 86400, END, "DAY", "at most 92 days"),
+        (END - 60 * 86400, END, "BATCH", "use a larger bucket"),
+    ],
+)
+def test_activity_limits(gql, frm, to, bucket, error):
+    result = gql(ACTIVITY, key=FLAKY, **{"from": iso(frm), "to": iso(to), "bucket": bucket})
+    assert error in result["errors"][0]["message"]
+
+
+def test_activity_request_bucket_budget(settings):
+    # 2 BPs x 48 hourly buckets = 96 buckets; a budget of 95 refuses the request.
+    tight = dataclasses.replace(settings, max_request_buckets=95)
+    query = """
+    query ($from: DateTime!, $to: DateTime!) {
+      blockProducers(first: 2) { items { activity(from: $from, to: $to) { bucketCount: totals { bucketCount } } } }
+    }
+    """
+    variables = {"from": iso(ACTIVITY_FROM), "to": iso(END)}
+    with TestClient(create_app(tight)) as client:
+        result = client.post("/graphql", json={"query": query, "variables": variables}).json()
+    assert "more than 95 activity buckets" in result["errors"][0]["message"]
