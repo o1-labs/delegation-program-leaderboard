@@ -5,7 +5,8 @@ database. For each block producer (BP) it gives:
 
 - uptime over the last day, week and month;
 - whether the BP is up now (it sent a submission recently);
-- the official 90-day score that the coordinator stores;
+- the official 90-day score that the coordinator stores, also as a full
+  scoreboard of all BPs in one response;
 - an activity histogram over a custom date range, to tell a BP that shut
   its node down from a BP that runs a node with problems.
 
@@ -39,6 +40,28 @@ The deployment puts it behind the o1labs oauth2-proxy (internal only).
   }
 }
 ```
+
+## Scoreboard: all BPs in one response
+
+```graphql
+{
+  scoreboard(applicationStatus: true) {   # scoredOnly defaults to true
+    rank publicKey
+    officialScore { score scorePercent applicationStatus }
+    blockProducer { isUp month: uptime(window: MONTH) { percent } }
+  }
+}
+```
+
+- All BPs from `nodes`, best `scorePercent` first, with no pages. Equal
+  scores share a rank (1, 2, 2, 4). `applicationStatus: true` with the
+  default `scoredOnly: true` gives the BPs of the web leaderboard.
+- `blockProducer` gives every other field of the BP; each such field is one
+  SQL query for the whole scoreboard. `activity` on the scoreboard is limited
+  by `MAX_REQUEST_BUCKETS`.
+- If `nodes` has more than one row for a key, the row with the highest score
+  counts (`updatedAt` is the creation time of the row: the coordinator does
+  not change it when it updates the score).
 
 ## Activity histogram: shut down, or problems?
 

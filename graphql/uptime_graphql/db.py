@@ -73,12 +73,25 @@ LEFT JOIN LATERAL (
 ) s ON true
 """
 
-NODES_SQL = """
+# nodes has no unique key on block_producer_key. For a key with several rows,
+# take the row with the highest score (as UPTIME_SQL takes the row with the
+# most points). Not the newest row: update_scoreboard never sets updated_at,
+# which is the creation time of the row.
+NODE_ROWS = """
 SELECT DISTINCT ON (block_producer_key)
        block_producer_key, score, score_percent, updated_at, application_status
 FROM nodes
-WHERE block_producer_key = ANY(%(keys)s)
-ORDER BY block_producer_key, updated_at DESC NULLS LAST
+{where}
+ORDER BY block_producer_key, score DESC NULLS LAST, id
+"""
+
+NODES_SQL = NODE_ROWS.format(where="WHERE block_producer_key = ANY(%(keys)s)")
+
+SCOREBOARD_SQL = f"""
+SELECT * FROM ({NODE_ROWS.format(where="")}) n
+WHERE (%(status)s::boolean IS NULL OR application_status = %(status)s::boolean)
+  AND (NOT %(scored_only)s OR score IS NOT NULL)
+ORDER BY score_percent DESC NULLS LAST, score DESC NULLS LAST, block_producer_key
 """
 
 LIST_SQL = """
@@ -241,6 +254,10 @@ class Database:
             LIST_SQL, {"after": after or "", "limit": limit, "status": application_status}
         )
         return [row[0] for row in rows]
+
+    async def scoreboard(self, application_status, scored_only):
+        """-> [(key, score, score_percent, updated_at, application_status)], best first."""
+        return await self._fetch(SCOREBOARD_SQL, {"status": application_status, "scored_only": scored_only})
 
     async def last_batch_end(self):
         rows = await self._fetch(LAST_BATCH_SQL)

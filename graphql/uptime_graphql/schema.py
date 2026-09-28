@@ -303,15 +303,28 @@ class BlockProducer:
     @strawberry.field
     async def official_score(self, info: Info) -> OfficialScore | None:
         row = await info.context.nodes.load(self.public_key)
-        if row is None:
-            return None
-        score, score_percent, updated_at, application_status = row
-        return OfficialScore(
-            score=score,
-            score_percent=float(score_percent) if isinstance(score_percent, Decimal) else score_percent,
-            updated_at=updated_at,
-            application_status=application_status,
-        )
+        return None if row is None else _official_score(row)
+
+
+def _official_score(row):
+    score, score_percent, updated_at, application_status = row
+    return OfficialScore(
+        score=score,
+        score_percent=float(score_percent) if isinstance(score_percent, Decimal) else score_percent,
+        updated_at=updated_at,
+        application_status=application_status,
+    )
+
+
+@strawberry.type(description="One BP on the scoreboard.")
+class ScoreboardEntry:
+    rank: int = strawberry.field(description="1 = best scorePercent. Equal scores share a rank (1, 2, 2, 4).")
+    public_key: str
+    official_score: OfficialScore
+    block_producer: BlockProducer = strawberry.field(
+        description="For more fields of this BP, e.g. uptime(window:) or isUp. Each such "
+        "field is one SQL query for the whole scoreboard."
+    )
 
 
 @strawberry.type
@@ -357,6 +370,31 @@ class Query:
             items=[BlockProducer(public_key=key) for key in keys[:first]],
             next_cursor=next_cursor,
         )
+
+    @strawberry.field(
+        description="All BPs with their official score (from `nodes`), best first, in one "
+        "response. The web leaderboard shows applicationStatus: true, scoredOnly: true."
+    )
+    async def scoreboard(
+        self, info: Info, application_status: bool | None = None, scored_only: bool = True
+    ) -> list[ScoreboardEntry]:
+        rows = await info.context.db.scoreboard(application_status, scored_only)
+        # The rows already hold the official score: prime the loader so that
+        # blockProducer { officialScore } needs no second query.
+        info.context.nodes.prime_many({row[0]: row[1:] for row in rows})
+        entries, rank, previous = [], 0, object()
+        for position, (key, *node) in enumerate(rows, start=1):
+            if node[1] != previous:
+                rank, previous = position, node[1]
+            entries.append(
+                ScoreboardEntry(
+                    rank=rank,
+                    public_key=key,
+                    official_score=_official_score(node),
+                    block_producer=BlockProducer(public_key=key),
+                )
+            )
+        return entries
 
     @strawberry.field
     async def meta(self, info: Info) -> Meta:

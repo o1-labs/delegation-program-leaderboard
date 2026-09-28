@@ -286,3 +286,43 @@ def test_activity_request_bucket_budget(settings):
     with TestClient(create_app(tight)) as client:
         result = client.post("/graphql", json={"query": query, "variables": variables}).json()
     assert "more than 95 activity buckets" in result["errors"][0]["message"]
+
+
+SCOREBOARD = """
+query ($status: Boolean, $scoredOnly: Boolean! = true) {
+  scoreboard(applicationStatus: $status, scoredOnly: $scoredOnly) {
+    rank publicKey officialScore { score scorePercent applicationStatus }
+  }
+}
+"""
+
+
+def test_scoreboard_best_first(gql):
+    board = gql(SCOREBOARD)["data"]["scoreboard"]
+    assert [(e["rank"], e["publicKey"], e["officialScore"]["scorePercent"]) for e in board] == [
+        (1, ALWAYS, 100.0),  # of its two `nodes` rows, the one with the score
+        (2, LAST_DAY, 3.28),
+        (3, SUBMITS_ONLY, 0.0),
+    ]
+
+
+def test_scoreboard_filters_and_shared_rank(gql):
+    approved = gql(SCOREBOARD, status=True)["data"]["scoreboard"]
+    assert [e["publicKey"] for e in approved] == [ALWAYS, LAST_DAY]
+    everyone = gql(SCOREBOARD, scoredOnly=False)["data"]["scoreboard"]
+    # Unscored BPs come last and share a rank.
+    assert [(e["rank"], e["publicKey"]) for e in everyone[3:]] == [(4, FLAKY), (4, SHUTDOWN)]
+
+
+def test_scoreboard_with_more_fields_per_bp(gql):
+    query = """
+    { scoreboard { publicKey blockProducer { officialScore { score } uptime(window: DAY) { percent } } } }
+    """
+    board = gql(query)["data"]["scoreboard"]
+    assert [
+        (e["blockProducer"]["officialScore"]["score"], e["blockProducer"]["uptime"]["percent"]) for e in board
+    ] == [
+        (2159, 100.0),
+        (71, 100.0),
+        (0, 0.0),
+    ]
