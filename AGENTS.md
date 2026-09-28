@@ -28,6 +28,7 @@ web/
   getPageDataForSnark.php     ← AJAX data fetch
   connectionsnark.php         ← PDO connection
   config.php                  ← env → PHP config (URLs)
+graphql/                      ← internal GraphQL API: uptime per BP (day/week/month), isUp; see graphql/README.md
 Justfile                      ← canonical build/run commands
 docker-compose.yaml           ← service definitions, env_file: .env
 .env.example                  ← every supported env var, with defaults

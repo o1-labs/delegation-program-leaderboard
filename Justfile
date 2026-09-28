@@ -36,3 +36,11 @@ destroy-api:
 # Stop leaderboard api and web
 destroy-all:
   docker-compose down
+
+# Build uptime-graphql docker image
+build-graphql:
+  docker build -t uptime-graphql ./graphql
+
+# Run uptime-graphql tests (needs Docker for the test PostgreSQL)
+test-graphql:
+  ./graphql/run-tests.sh
