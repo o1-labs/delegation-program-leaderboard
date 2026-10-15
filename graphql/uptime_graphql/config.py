@@ -34,6 +34,8 @@ class Settings:
     # Distinct silences() argument sets in one request; each is one SQL query
     # over every BP of the request.
     max_silence_queries: int = 4
+    # BPs x days of all silences in one request: 300 BPs x 30 days is ~3 s.
+    max_request_silence_days: int = 9_000
 
     @classmethod
     def from_env(cls, env=None):
@@ -62,4 +64,5 @@ class Settings:
             max_activity_buckets=_int(env, "MAX_ACTIVITY_BUCKETS", 2500, 1, 100_000),
             max_request_buckets=_int(env, "MAX_REQUEST_BUCKETS", 50_000, 1, 10_000_000),
             max_silence_queries=_int(env, "MAX_SILENCE_QUERIES", 4, 1, 50),
+            max_request_silence_days=_int(env, "MAX_REQUEST_SILENCE_DAYS", 9_000, 1, 1_000_000),
         )

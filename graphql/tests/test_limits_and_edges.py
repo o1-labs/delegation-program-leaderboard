@@ -4,6 +4,7 @@ Each test reproduces a defect found in review of #12.
 """
 
 import asyncio
+import dataclasses
 import time
 from datetime import UTC, datetime, timedelta
 
@@ -184,3 +185,31 @@ def test_duplicate_nodes_rows_resolve_to_one_row(gql, split_node):
     assert bp["day"]["points"] == 0
     assert bp["month"]["points"] == DAY_BATCHES
     assert bp["activity"]["totals"]["points"] == 0
+
+
+LONGEST_SILENCE_PAGE = """
+query ($from: DateTime!, $to: DateTime!) {
+  blockProducers(first: 2) { items { activity(from: $from, to: $to) { %s } } }
+}
+"""
+
+
+def run_page(settings, fields, budget):
+    limited = dataclasses.replace(settings, max_request_silence_days=budget)
+    variables = {"from": iso(ACTIVITY_FROM), "to": iso(END)}
+    with TestClient(create_app(limited)) as client:
+        return client.post(
+            "/graphql", json={"query": LONGEST_SILENCE_PAGE % fields, "variables": variables}
+        ).json()
+
+
+def test_silences_are_charged_per_bp_day(settings):
+    # 2 BPs x 2 days = 4 BP-days.
+    assert "errors" not in run_page(settings, "longestSilence { minutes }", 4)
+    result = run_page(settings, "longestSilence { minutes }", 3)
+    assert "BP-days" in result["errors"][0]["message"]
+
+
+def test_silences_and_longest_silence_are_charged_once(settings):
+    result = run_page(settings, "silences { minutes } longestSilence { minutes }", 4)
+    assert "errors" not in result, result["errors"]

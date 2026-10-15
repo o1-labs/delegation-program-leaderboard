@@ -93,6 +93,9 @@ The deployment puts it behind the o1labs oauth2-proxy (internal only).
 - Each distinct `silences(minMinutes:)` value or range is one SQL query over
   every BP of the request. A request can have at most `MAX_SILENCE_QUERIES`
   of them; `longestSilence` shares the query of `silences(minMinutes: 60)`.
+  The query reads every submission of the BP in the range, so all silences
+  of a request together can cover at most `MAX_REQUEST_SILENCE_DAYS` BP-days
+  (BPs x days of the range; default 9000, about 300 BPs over 30 days).
 
 How to read it:
 
@@ -155,6 +158,7 @@ also finds a BP that has only submissions; it returns null for an unknown key.
 | `MAX_ACTIVITY_BUCKETS` | no | `2500` | most buckets in one `activity` |
 | `MAX_REQUEST_BUCKETS` | no | `50000` | most buckets of all `activity` fields in one request |
 | `MAX_SILENCE_QUERIES` | no | `4` | most distinct `silences` argument sets in one request |
+| `MAX_REQUEST_SILENCE_DAYS` | no | `9000` | most BP-days (BPs x days) of all `silences`/`longestSilence` fields in one request |
 
 The service also opens its sessions with `default_transaction_read_only=on`,
 so it cannot write even with a read-write user.
@@ -178,7 +182,9 @@ SQL query per field and argument set, not one per BP.
 | 300 BPs, longest silence | 3.5 s |
 
 300 BPs with `HOUR` buckets (216,000 buckets) is refused by
-`MAX_REQUEST_BUCKETS`; ask for a smaller page or a larger bucket.
+`MAX_REQUEST_BUCKETS`; ask for a smaller page or a larger bucket. Silences
+of 300 BPs over 92 days (27,600 BP-days, about 7.5 s) are refused by
+`MAX_REQUEST_SILENCE_DAYS`.
 
 ## Tests
 

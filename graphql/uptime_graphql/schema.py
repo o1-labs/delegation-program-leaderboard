@@ -45,6 +45,8 @@ class Context:
     nodes: DataLoader = field(init=False)
     _loaders: dict = field(default_factory=dict, init=False)
     _buckets: int = field(default=0, init=False)
+    _silence_days: int = field(default=0, init=False)
+    _silence_loads: set = field(default_factory=set, init=False)
 
     def __post_init__(self):
         self.last_submission = DataLoader(load_fn=self.db.last_submission)
@@ -58,7 +60,7 @@ class Context:
             ("activity", span), lambda keys: self.db.activity(keys, span.start, span.end, span.size)
         )
 
-    def silences(self, start, end, min_minutes):
+    def silences(self, key, start, end, min_minutes):
         # Each distinct argument set is one SILENCES_SQL over every BP of the
         # request (seconds for a scoreboard), so aliases must not multiply it.
         cache_key = ("silences", start, end, min_minutes)
@@ -68,7 +70,23 @@ class Context:
                 f"the request asks for more than {limit} different silences; "
                 "use fewer minMinutes values or ranges"
             )
+        self._spend_silence_days(cache_key, key, -(-(end - start) // timedelta(days=1)))
         return self._loader(cache_key, lambda keys: self.db.silences(keys, start, end, min_minutes))
+
+    def _spend_silence_days(self, cache_key, key, days):
+        # SILENCES_SQL scans every submission of the BP in the range, so its
+        # cost is BPs x days. silences and longestSilence on the same BP and
+        # range share one load and are charged once.
+        if (cache_key, key) in self._silence_loads:
+            return
+        self._silence_loads.add((cache_key, key))
+        self._silence_days += days
+        limit = self.settings.max_request_silence_days
+        if self._silence_days > limit:
+            raise ValueError(
+                f"the request asks for silences over more than {limit} BP-days in total; "
+                "ask for fewer BPs per page or a shorter range"
+            )
 
     def spend_buckets(self, count):
         self._buckets += count
@@ -221,7 +239,7 @@ class Activity:
     async def _gaps(self, info, min_minutes):
         start = epoch_to_utc(self.span.start)
         end = self.to
-        rows = await info.context.silences(start, end, min_minutes).load(self.public_key)
+        rows = await info.context.silences(self.public_key, start, end, min_minutes).load(self.public_key)
         return [
             (
                 Silence(
