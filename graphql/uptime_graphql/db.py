@@ -25,7 +25,24 @@ from datetime import UTC, datetime, timedelta
 
 from psycopg_pool import AsyncConnectionPool
 
-UPTIME_SQL = """
+# nodes has no unique key on block_producer_key, so one rule picks one row per
+# key for every field: the highest score, then the lowest id. The coordinator
+# cannot add points to a duplicated key (its points INSERT looks the node_id
+# up with a scalar subquery, which fails on two rows), so the points of a
+# duplicate are history, and the scored row is the one the official score
+# reports. Not the newest row: update_scoreboard never sets updated_at,
+# which is the creation time of the row.
+NODE_ROWS = """
+SELECT DISTINCT ON (block_producer_key)
+       id, block_producer_key AS key, score, score_percent, updated_at, application_status
+FROM nodes
+{where}
+ORDER BY block_producer_key, score DESC NULLS LAST, id
+"""
+
+KEYS_NODES = NODE_ROWS.format(where="WHERE block_producer_key = ANY(%(keys)s)")
+
+UPTIME_SQL = f"""
 WITH w AS (SELECT max(batch_end_epoch) AS end_epoch FROM bot_logs),
 win AS (
     SELECT b.id, b.batch_end_epoch
@@ -35,7 +52,7 @@ win AS (
       AND b.files_processed > -1
 ),
 surveys AS (SELECT count(*) AS n FROM win),
-nd AS (SELECT id, block_producer_key AS key FROM nodes WHERE block_producer_key = ANY(%(keys)s)),
+nd AS ({KEYS_NODES}),
 -- Count per node_id, like update_scoreboard: (bot_log_id, node_id) is unique
 -- in points_summary, so count(*) needs no DISTINCT (a DISTINCT over a month
 -- of batches sorts ~0.5M rows for 300 BPs and is 5x slower).
@@ -46,12 +63,9 @@ per_node AS (
     WHERE ps.node_id IN (SELECT id FROM nd)
     GROUP BY 1
 ),
--- nodes has no unique key on block_producer_key. If one key has several
--- rows, take the row with the most points: its official score, at most 100 percent.
 pts AS (
-    SELECT nd.key, max(per_node.points) AS points, max(per_node.last_point_end) AS last_point_end
+    SELECT nd.key, per_node.points, per_node.last_point_end
     FROM per_node JOIN nd ON nd.id = per_node.node_id
-    GROUP BY 1
 )
 SELECT k.key, COALESCE(pts.points, 0), surveys.n, pts.last_point_end, w.end_epoch
 FROM unnest(%(keys)s::text[]) AS k(key)
@@ -73,25 +87,15 @@ LEFT JOIN LATERAL (
 ) s ON true
 """
 
-# nodes has no unique key on block_producer_key. For a key with several rows,
-# take the row with the highest score (as UPTIME_SQL takes the row with the
-# most points). Not the newest row: update_scoreboard never sets updated_at,
-# which is the creation time of the row.
-NODE_ROWS = """
-SELECT DISTINCT ON (block_producer_key)
-       block_producer_key, score, score_percent, updated_at, application_status
-FROM nodes
-{where}
-ORDER BY block_producer_key, score DESC NULLS LAST, id
-"""
+NODE_COLUMNS = "key, score, score_percent, updated_at, application_status"
 
-NODES_SQL = NODE_ROWS.format(where="WHERE block_producer_key = ANY(%(keys)s)")
+NODES_SQL = f"SELECT {NODE_COLUMNS} FROM ({KEYS_NODES}) n"
 
 SCOREBOARD_SQL = f"""
-SELECT * FROM ({NODE_ROWS.format(where="")}) n
+SELECT {NODE_COLUMNS} FROM ({NODE_ROWS.format(where="")}) n
 WHERE (%(status)s::boolean IS NULL OR application_status = %(status)s::boolean)
   AND (NOT %(scored_only)s OR score IS NOT NULL)
-ORDER BY score_percent DESC NULLS LAST, score DESC NULLS LAST, block_producer_key
+ORDER BY score_percent DESC NULLS LAST, score DESC NULLS LAST, key
 """
 
 LIST_SQL = """
@@ -115,14 +119,14 @@ WHERE batch_start_epoch >= %(start)s AND batch_start_epoch < %(end)s
 GROUP BY 1
 """
 
-ACTIVITY_POINTS_SQL = """
+ACTIVITY_POINTS_SQL = f"""
 WITH win AS (
     SELECT id, (batch_start_epoch - %(start)s) / %(size)s AS i
     FROM bot_logs
     WHERE batch_start_epoch >= %(start)s AND batch_start_epoch < %(end)s
       AND files_processed > -1
 ),
-nd AS (SELECT id, block_producer_key AS key FROM nodes WHERE block_producer_key = ANY(%(keys)s)),
+nd AS ({KEYS_NODES}),
 per_node AS (
     SELECT ps.node_id, win.i, count(*) AS points
     FROM points_summary ps
@@ -130,17 +134,20 @@ per_node AS (
     WHERE ps.node_id IN (SELECT id FROM nd)
     GROUP BY 1, 2
 )
-SELECT nd.key, per_node.i, max(per_node.points)
+SELECT nd.key, per_node.i, per_node.points
 FROM per_node JOIN nd ON nd.id = per_node.node_id
-GROUP BY 1, 2
 """
 
 # accepted = what the coordinator scores (coordinator.load_submissions):
 # verified and no validation_error. failed = verified false or an error.
-# The rest (verified IS NULL, no error) is not verified yet.
+# The rest (verified IS NULL, no error) is not verified yet. floor(): a cast
+# to bigint rounds, which moves a submission in the last half second of a
+# bucket into the next one (or past the last one). date_part() is double
+# precision, which is exact to the microsecond here and 25% faster than the
+# numeric extract().
 ACTIVITY_SUBMISSIONS_SQL = """
 SELECT submitter,
-       (extract(epoch FROM submitted_at)::bigint - %(start)s) / %(size)s AS i,
+       (floor(date_part('epoch', submitted_at))::bigint - %(start)s) / %(size)s AS i,
        count(*),
        count(*) FILTER (WHERE verified AND coalesce(validation_error, '') = ''),
        count(*) FILTER (WHERE verified IS FALSE OR coalesce(validation_error, '') <> '')

@@ -93,7 +93,7 @@ For Web (`/web`):
 - **Dependencies**: See `requirements.txt` (Flask, psycopg2, flasgger for Swagger)
 
 ### GraphQL API (`/graphql`)
-- Internal, read-only GraphQL API (Strawberry + Starlette) with uptime per block producer over the last day/week/month and `isUp`. Own image `ghcr.io/o1-labs/uptime-graphql`, own tests (`just test-graphql`). See `graphql/README.md`.
+- Internal, read-only GraphQL API (Strawberry + Starlette): per block producer uptime over the last day/week/month, `isUp`, `officialScore`, a full `scoreboard`, and an `activity` histogram with silences over a custom range. Own image `ghcr.io/o1-labs/uptime-graphql`, own tests (`just test-graphql`). See `graphql/README.md`.
 
 ### Database Integration
 **Important**: The web component queries the database directly via PHP - it does NOT use the API. Both components connect independently to the same PostgreSQL database containing delegation program uptime data. The API provides structured REST access while the web interface makes direct SQL queries for the leaderboard display.

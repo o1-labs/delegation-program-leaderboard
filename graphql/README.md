@@ -19,7 +19,7 @@ The deployment puts it behind the o1labs oauth2-proxy (internal only).
 |---|---|
 | `POST /graphql` | GraphQL API. `GET /graphql` in a browser opens GraphiQL. |
 | `GET /healthz` | Liveness: the process runs. Does not touch the database. |
-| `GET /readyz` | Readiness: `SELECT 1` on the database, else `503`. |
+| `GET /readyz` | Readiness: `SELECT 1` on the database, else `503` within 5 s. Set the probe `timeoutSeconds` to at least 6. |
 
 ## Example
 
@@ -60,7 +60,8 @@ The deployment puts it behind the o1labs oauth2-proxy (internal only).
   SQL query for the whole scoreboard. `activity` on the scoreboard is limited
   by `MAX_REQUEST_BUCKETS`.
 - If `nodes` has more than one row for a key, the row with the highest score
-  counts (`updatedAt` is the creation time of the row: the coordinator does
+  (then the lowest id) counts, for this and every other field
+  (`updatedAt` is the creation time of the row: the coordinator does
   not change it when it updates the score).
 
 ## Activity histogram: shut down, or problems?
@@ -89,6 +90,9 @@ The deployment puts it behind the o1labs oauth2-proxy (internal only).
 - A **silence** is a period without any submission. The range start and end
   count as its limits, so a BP that never submitted has one silence over the
   whole range. `openEnded` means the BP did not come back before `to`.
+- Each distinct `silences(minMinutes:)` value or range is one SQL query over
+  every BP of the request. A request can have at most `MAX_SILENCE_QUERIES`
+  of them; `longestSilence` shares the query of `silences(minMinutes: 60)`.
 
 How to read it:
 
@@ -117,8 +121,9 @@ shorter window:
 - The window is 1, 7 or 30 days and **ends at the end of the latest batch**
   (`meta.lastBatchEnd`), not at the current time. The coordinator runs
   behind real time; the batch in progress does not count against the BP.
-- If `nodes` has more than one row for a key, the row with the most points
-  counts.
+- If `nodes` has more than one row for a key, the row with the highest
+  score (then the lowest id) counts. The coordinator cannot add points to a
+  duplicated key, so the points of the other rows are history.
 
 **isUp** is true if the last submission of the BP (`submissions`) is at most
 `IS_UP_WINDOW_MINUTES` old (default 40 = two survey intervals). Override it
@@ -143,12 +148,13 @@ also finds a BP that has only submissions; it returns null for an unknown key.
 | `POSTGRES_SSLMODE` | no | `prefer` | |
 | `IS_UP_WINDOW_MINUTES` | no | `40` | 1 to 1440 |
 | `MAX_PAGE_SIZE` | no | `500` | largest `first` in `blockProducers` |
-| `MAX_QUERY_DEPTH` | no | `8` | the deepest useful query has depth 3 |
+| `MAX_QUERY_DEPTH` | no | `8` | 4 to 20; the deepest documented query (`scoreboard.blockProducer.activity.buckets.start`) has depth 4 |
 | `STATEMENT_TIMEOUT_MS` | no | `10000` | per SQL statement |
 | `DB_POOL_MAX_SIZE` | no | `4` | connections per pod |
 | `MAX_ACTIVITY_DAYS` | no | `92` | longest `activity` range |
 | `MAX_ACTIVITY_BUCKETS` | no | `2500` | most buckets in one `activity` |
 | `MAX_REQUEST_BUCKETS` | no | `50000` | most buckets of all `activity` fields in one request |
+| `MAX_SILENCE_QUERIES` | no | `4` | most distinct `silences` argument sets in one request |
 
 The service also opens its sessions with `default_transaction_read_only=on`,
 so it cannot write even with a read-write user.

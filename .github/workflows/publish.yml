@@ -4,6 +4,9 @@ on:
   push:
     tags:
     - '*'
+    # Component tags have their own workflows (lite-image.yml, graphql-image.yml).
+    - '!lite-v*'
+    - '!graphql-v*'
   workflow_dispatch:
     inputs:
       docker_tag_prefix:

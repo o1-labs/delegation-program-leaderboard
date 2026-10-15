@@ -31,6 +31,9 @@ class Settings:
     max_activity_buckets: int = 2500
     # Buckets of all activity() fields in one request, e.g. a page of BPs.
     max_request_buckets: int = 50_000
+    # Distinct silences() argument sets in one request; each is one SQL query
+    # over every BP of the request.
+    max_silence_queries: int = 4
 
     @classmethod
     def from_env(cls, env=None):
@@ -46,15 +49,17 @@ class Settings:
             password=env["POSTGRES_PASSWORD"],
             sslmode=env.get("POSTGRES_SSLMODE") or "prefer",
             application_name="uptime-graphql",
+            connect_timeout=5,
         )
         return cls(
             conninfo=conninfo,
             is_up_minutes=_int(env, "IS_UP_WINDOW_MINUTES", 40, 1, 1440),
             max_page_size=_int(env, "MAX_PAGE_SIZE", 500, 1, 5000),
-            max_query_depth=_int(env, "MAX_QUERY_DEPTH", 8, 3, 20),
+            max_query_depth=_int(env, "MAX_QUERY_DEPTH", 8, 4, 20),
             statement_timeout_ms=_int(env, "STATEMENT_TIMEOUT_MS", 10_000, 100, 600_000),
             pool_max_size=_int(env, "DB_POOL_MAX_SIZE", 4, 1, 50),
             max_activity_days=_int(env, "MAX_ACTIVITY_DAYS", 92, 1, 3660),
             max_activity_buckets=_int(env, "MAX_ACTIVITY_BUCKETS", 2500, 1, 100_000),
             max_request_buckets=_int(env, "MAX_REQUEST_BUCKETS", 50_000, 1, 10_000_000),
+            max_silence_queries=_int(env, "MAX_SILENCE_QUERIES", 4, 1, 50),
         )

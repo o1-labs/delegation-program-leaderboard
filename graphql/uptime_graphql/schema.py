@@ -59,10 +59,16 @@ class Context:
         )
 
     def silences(self, start, end, min_minutes):
-        return self._loader(
-            ("silences", start, end, min_minutes),
-            lambda keys: self.db.silences(keys, start, end, min_minutes),
-        )
+        # Each distinct argument set is one SILENCES_SQL over every BP of the
+        # request (seconds for a scoreboard), so aliases must not multiply it.
+        cache_key = ("silences", start, end, min_minutes)
+        limit = self.settings.max_silence_queries
+        if cache_key not in self._loaders and sum(key[0] == "silences" for key in self._loaders) >= limit:
+            raise ValueError(
+                f"the request asks for more than {limit} different silences; "
+                "use fewer minMinutes values or ranges"
+            )
+        return self._loader(cache_key, lambda keys: self.db.silences(keys, start, end, min_minutes))
 
     def spend_buckets(self, count):
         self._buckets += count
