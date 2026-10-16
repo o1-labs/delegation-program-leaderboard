@@ -65,7 +65,7 @@ class Context:
         # request (seconds for a scoreboard), so aliases must not multiply it.
         cache_key = ("silences", start, end, min_minutes)
         limit = self.settings.max_silence_queries
-        if cache_key not in self._loaders and sum(key[0] == "silences" for key in self._loaders) >= limit:
+        if cache_key not in self._loaders and sum(k[0] == "silences" for k in self._loaders) >= limit:
             raise ValueError(
                 f"the request asks for more than {limit} different silences; "
                 "use fewer minMinutes values or ranges"

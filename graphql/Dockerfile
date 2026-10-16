@@ -7,8 +7,9 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY uptime_graphql/ /app/uptime_graphql/
 
+# Numeric UID: runAsNonRoot cannot verify a named user.
 RUN useradd --system --uid 10001 app
-USER app
+USER 10001
 
 EXPOSE 8080
 
