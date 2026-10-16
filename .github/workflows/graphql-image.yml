@@ -1,0 +1,105 @@
+name: Publish uptime-graphql
+
+on:
+  push:
+    tags:
+      - 'graphql-v*'
+    branches:
+      - main
+    paths:
+      - 'graphql/**'
+      - '.github/workflows/graphql-image.yml'
+  pull_request:
+    paths:
+      - 'graphql/**'
+      - '.github/workflows/graphql-image.yml'
+  workflow_dispatch:
+    inputs:
+      docker_tag_prefix:
+        description: "Docker tag prefix (e.g. adhoc-test)"
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: o1-labs/uptime-graphql
+
+concurrency:
+  group: '${{ github.workflow }} @ ${{ github.head_ref || github.ref }}'
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: GraphQL tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: graphql/requirements-dev.txt
+
+      - name: Run graphql tests
+        run: ./graphql/run-tests.sh
+
+  build-and-push:
+    name: Build and push image
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Compute tag
+        id: tag
+        run: |
+          SHORT_SHA=$(echo "$GITHUB_SHA" | cut -c1-7)
+          case "${{ github.event_name }}" in
+            push)
+              if [[ "$GITHUB_REF" == refs/tags/graphql-v* ]]; then
+                TAG="${GITHUB_REF#refs/tags/graphql-}"
+              else
+                TAG="main-${SHORT_SHA}"
+              fi
+              PUSH=true
+              ;;
+            pull_request)
+              TAG="pr-${{ github.event.pull_request.number }}-${SHORT_SHA}"
+              PUSH=false
+              ;;
+            workflow_dispatch)
+              PREFIX="${{ inputs.docker_tag_prefix }}"
+              BRANCH=$(echo "${GITHUB_REF##*/}" | tr '[:upper:]' '[:lower:]')
+              TAG="${PREFIX}-${BRANCH}-${SHORT_SHA}"
+              PUSH=true
+              ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "push=$PUSH" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        if: steps.tag.outputs.push == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build (and conditionally push)
+        uses: docker/build-push-action@v7
+        with:
+          context: ./graphql
+          push: ${{ steps.tag.outputs.push }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

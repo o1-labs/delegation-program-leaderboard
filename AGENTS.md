@@ -28,6 +28,7 @@ web/
   getPageDataForSnark.php     ← AJAX data fetch
   connectionsnark.php         ← PDO connection
   config.php                  ← env → PHP config (URLs)
+graphql/                      ← internal GraphQL API: per-BP uptime (day/week/month), isUp, officialScore, scoreboard, activity histogram + silences; see graphql/README.md
 Justfile                      ← canonical build/run commands
 docker-compose.yaml           ← service definitions, env_file: .env
 .env.example                  ← every supported env var, with defaults
@@ -42,9 +43,9 @@ just build-all
 just launch-all            # web on :80, api on :5000
 ```
 
-Per-service recipes: `build-web`, `build-api`, `launch-web`, `launch-api`, `destroy-web`, `destroy-api`, `destroy-all`. Run `just` (no args) to list them.
+Per-service recipes: `build-web`, `build-api`, `build-graphql`, `launch-web`, `launch-api`, `destroy-web`, `destroy-api`, `destroy-all`, `test-graphql`. Run `just` (no args) to list them.
 
-There is no language-level test suite in this repo. To verify a change end-to-end:
+Only `graphql/` has a test suite: `just test-graphql` (needs Docker for the test PostgreSQL). `web/` and `api/` have none. To verify a change to them end-to-end:
 
 1. `just build-<component>` — confirms Docker build succeeds.
 2. `just launch-<component>` — confirms the container starts.
@@ -66,7 +67,7 @@ If you can't run Docker in your sandbox, say so explicitly in your report rather
 - **`LOGGING_LOCATION` default crashes in containers.** The default `./application.log` may be unwritable. For containerised deployments set `LOGGING_LOCATION=""` to switch to console-only logging.
 - **Web does *not* call the API.** Changing an API response shape does not affect the leaderboard UI — and vice versa. Make sure your change targets the right component.
 - **`IGNORE_APPLICATION_STATUS=1` is a test-mode flag for `web/` only.** Setting it in production bypasses the `application_status = true` filter and exposes applicants who have not been accepted. The API has no equivalent flag.
-- **Image publish on tag push.** [`/.github/workflows/publish.yml`](./.github/workflows/publish.yml) builds and pushes to `ghcr.io` whenever a tag is pushed. Tag deliberately.
+- **Image publish on tag push.** [`/.github/workflows/publish.yml`](./.github/workflows/publish.yml) builds and pushes to `ghcr.io` whenever a tag is pushed, except the component tags `lite-v*` and `graphql-v*`, which have their own workflows. Tag deliberately.
 - **The web image bakes PHP files at build time** — they're not bind-mounted. Rebuild after editing.
 
 ## What not to touch without asking
